@@ -4,7 +4,7 @@ use App\Http\Controllers\ProfileController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
-    return view('welcome');
+    return redirect()->route('dashboard');
 });
 
 Route::get('/dashboard', function () {
@@ -23,6 +23,8 @@ Route::middleware('auth')->group(function () {
     // Role-based dashboard routes
     Route::middleware('role:admin')->group(function () {
         Route::get('/admin/dashboard', [\App\Http\Controllers\DashboardController::class, 'admin'])->name('admin.dashboard');
+        Route::resource('/admin/users', \App\Http\Controllers\UserController::class);
+        Route::resource('/admin/rooms', \App\Http\Controllers\RoomController::class);
     });
 
     Route::middleware('role:kepala_lab')->group(function () {
