@@ -5,8 +5,29 @@
         </h2>
     </x-slot>
 
-    <div class="py-12 bg-gray-50 min-h-screen" x-data="{ tab: 'ringkasan' }">
+    <div class="py-12 bg-gray-50 min-h-screen" x-data="{ tab: '{{ request('tab', 'ringkasan') }}' }">
         <div class="max-w-7xl mx-auto sm:px-6 lg:px-8 space-y-6">
+
+            {{-- Flash Messages --}}
+            @if(session('success'))
+                <div class="bg-green-100 border border-green-200 text-green-700 px-4 py-3 rounded-xl relative shadow-sm" role="alert">
+                    <span class="block sm:inline">{{ session('success') }}</span>
+                </div>
+            @endif
+            @if(session('error'))
+                <div class="bg-red-100 border border-red-200 text-red-700 px-4 py-3 rounded-xl relative shadow-sm" role="alert">
+                    <span class="block sm:inline">{{ session('error') }}</span>
+                </div>
+            @endif
+            @if($errors->any())
+                <div class="bg-red-100 border border-red-200 text-red-700 px-4 py-3 rounded-xl relative shadow-sm" role="alert">
+                    <ul class="list-disc pl-5">
+                        @foreach($errors->all() as $error)
+                            <li>{{ $error }}</li>
+                        @endforeach
+                    </ul>
+                </div>
+            @endif
             
             <!-- Navigation Tabs (Clean UI) -->
             <div class="border-b border-gray-200 overflow-x-auto">
@@ -31,18 +52,20 @@
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
                         <p class="text-sm font-medium text-gray-500">Pengadaan Aktif</p>
-                        <h4 class="mt-2 text-3xl font-bold text-gray-900">15</h4>
+                        <h4 class="mt-2 text-3xl font-bold text-gray-900">{{ $activeProcurements }}</h4>
                         <p class="mt-2 text-sm text-indigo-600 font-medium">Sedang diproses vendor</p>
                     </div>
                     <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-                        <p class="text-sm font-medium text-gray-500">Vendor Terdaftar</p>
-                        <h4 class="mt-2 text-3xl font-bold text-gray-900">24</h4>
-                        <p class="mt-2 text-sm text-gray-500">Vendor Aktif</p>
+                        <p class="text-sm font-medium text-gray-500">Item Siap PO</p>
+                        <h4 class="mt-2 text-3xl font-bold text-gray-900">{{ $pendingDocuments }}</h4>
+                        <p class="mt-2 text-sm text-gray-500">Menunggu dibuatkan Purchase Order</p>
                     </div>
                     <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-                        <p class="text-sm font-medium text-gray-500">Dokumen Tertunda</p>
-                        <h4 class="mt-2 text-3xl font-bold text-gray-900">5</h4>
-                        <p class="mt-2 text-sm text-amber-600 font-medium">Menunggu PO / Invoice</p>
+                        <p class="text-sm font-medium text-gray-500">PO Belum Selesai</p>
+                        <h4 class="mt-2 text-3xl font-bold text-gray-900">{{ $purchaseOrders->count() }}</h4>
+                        <p class="mt-2 text-sm {{ $purchaseOrders->count() > 0 ? 'text-amber-600 font-medium' : 'text-gray-500' }}">
+                            {{ $purchaseOrders->count() > 0 ? 'Menunggu Penerimaan' : 'Semua selesai' }}
+                        </p>
                     </div>
                 </div>
             </div>
@@ -67,17 +90,28 @@
                                 </tr>
                             </thead>
                             <tbody class="bg-white divide-y divide-gray-200">
+                                @forelse($approvedItems as $item)
                                 <tr>
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-indigo-600">DRF-2026-002</td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">Lab Komputer Dasar</td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">Monitor 24" IPS Dell</td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-center">5</td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-indigo-600">{{ $item->draft->draft_number }}</td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ $item->draft->room->name ?? '-' }}</td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ $item->name }}</td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-center">{{ $item->quantity }}</td>
                                     <td class="px-6 py-4 whitespace-nowrap text-center text-sm font-medium">
-                                        <button type="button" class="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
-                                            Buat Pesanan (PO)
-                                        </button>
+                                        <form action="{{ route('staff_admin.po.store', $item) }}" method="POST" class="inline" onsubmit="return confirm('Buat Purchase Order untuk item ini?')">
+                                            @csrf
+                                            <button type="submit" class="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                                                Buat Pesanan (PO)
+                                            </button>
+                                        </form>
                                     </td>
                                 </tr>
+                                @empty
+                                <tr>
+                                    <td colspan="5" class="px-6 py-8 text-center text-gray-500">
+                                        Belum ada item yang disetujui dari draf yang sudah dikunci.
+                                    </td>
+                                </tr>
+                                @endforelse
                             </tbody>
                         </table>
                     </div>
@@ -99,31 +133,54 @@
                                     <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Item Barang (PO)</th>
                                     <th scope="col" class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Total Pesanan</th>
                                     <th scope="col" class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Sudah Diterima</th>
+                                    <th scope="col" class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                                     <th scope="col" class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50">Input Penerimaan Baru</th>
                                 </tr>
                             </thead>
                             <tbody class="bg-white divide-y divide-gray-200">
+                                @forelse($purchaseOrders as $po)
                                 <tr>
                                     <td class="px-6 py-4 whitespace-nowrap">
-                                        <div class="text-sm font-medium text-gray-900">Monitor 24" IPS Dell</div>
-                                        <div class="text-xs text-gray-500 mt-1">PO-2026-004</div>
+                                        <div class="text-sm font-medium text-gray-900">{{ $po->draftItem->name }}</div>
+                                        <div class="text-xs text-gray-500 mt-1">{{ $po->po_number }}</div>
                                     </td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-center text-sm font-medium text-gray-900">5</td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-center text-sm font-medium text-gray-900">{{ $po->total_ordered }}</td>
                                     <td class="px-6 py-4 whitespace-nowrap text-center">
-                                        <span class="px-2.5 py-0.5 inline-flex text-xs leading-5 font-medium rounded-full bg-green-100 text-green-800 border border-green-200">
-                                            2
+                                        <span class="px-2.5 py-0.5 inline-flex text-xs leading-5 font-medium rounded-full {{ $po->total_received >= $po->total_ordered ? 'bg-green-100 text-green-800 border-green-200' : 'bg-yellow-100 text-yellow-800 border-yellow-200' }} border">
+                                            {{ $po->total_received }}
+                                        </span>
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-center">
+                                        <span class="px-2.5 py-0.5 inline-flex text-xs leading-5 font-medium rounded-full
+                                            @if($po->status === 'completed') bg-green-100 text-green-800 border-green-200
+                                            @elseif($po->status === 'partial') bg-yellow-100 text-yellow-800 border-yellow-200
+                                            @else bg-blue-100 text-blue-800 border-blue-200
+                                            @endif border">
+                                            {{ $po->status === 'completed' ? 'Selesai' : ($po->status === 'partial' ? 'Parsial' : 'Dipesan') }}
                                         </span>
                                     </td>
                                     <td class="px-6 py-4 whitespace-nowrap bg-gray-50">
-                                        <form action="#" @submit.prevent class="flex items-center justify-center space-x-2">
-                                            <input type="number" value="1" min="1" max="3" class="w-20 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm text-center" placeholder="Qty">
-                                            <input type="date" class="rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
-                                            <button type="button" class="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                                        @if($po->remaining > 0)
+                                        <form action="{{ route('staff_admin.goods-receipt.store', $po) }}" method="POST" class="flex items-center justify-center space-x-2">
+                                            @csrf
+                                            <input type="number" name="qty_received" value="1" min="1" max="{{ $po->remaining }}" class="w-20 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm text-center" placeholder="Qty">
+                                            <input type="date" name="received_date" value="{{ date('Y-m-d') }}" required class="rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                                            <button type="submit" class="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
                                                 Catat
                                             </button>
                                         </form>
+                                        @else
+                                        <span class="text-sm text-green-600 font-medium">✓ Lengkap</span>
+                                        @endif
                                     </td>
                                 </tr>
+                                @empty
+                                <tr>
+                                    <td colspan="5" class="px-6 py-8 text-center text-gray-500">
+                                        Belum ada Purchase Order aktif. Buat PO dari tab "Draf Disetujui".
+                                    </td>
+                                </tr>
+                                @endforelse
                             </tbody>
                         </table>
                     </div>
@@ -139,27 +196,43 @@
                     </div>
                     
                     <div class="p-6">
-                        <form action="#" @submit.prevent>
+                        <form action="{{ route('staff_admin.inventory.store') }}" method="POST" enctype="multipart/form-data">
+                            @csrf
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 <div class="md:col-span-2">
-                                    <label class="block text-sm font-medium text-gray-700">Pilih Barang Masuk (Belum Berlabel)</label>
-                                    <select class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm bg-white">
-                                        <option>Monitor 24" IPS Dell (Diterima: 25 Mei 2026)</option>
-                                        <option>Monitor 24" IPS Dell (Diterima: 27 Mei 2026)</option>
-                                    </select>
+                                    <label class="block text-sm font-medium text-gray-700">Nama Barang</label>
+                                    <input type="text" name="name" required placeholder="Contoh: Monitor 24 IPS Dell" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" value="{{ old('name') }}">
                                 </div>
 
                                 <div>
                                     <label class="block text-sm font-medium text-gray-700">Penomoran Label Inventaris</label>
-                                    <input type="text" placeholder="Contoh: INV-KOM-001" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
-                                    <p class="mt-2 text-xs text-gray-500">Sistem menyarankan: INV-KOM-045</p>
+                                    <input type="text" name="label_code" required placeholder="Contoh: INV-KOM-001" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" value="{{ old('label_code') }}">
+                                    @error('label_code') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
                                 </div>
 
                                 <div>
-                                    <label class="block text-sm font-medium text-gray-700">Lokasi Penempatan Awal</label>
-                                    <select class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm bg-white">
-                                        <option>Lab Komputer Dasar (Gedung A)</option>
+                                    <label class="block text-sm font-medium text-gray-700">Lokasi Penempatan</label>
+                                    <select name="room_id" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm bg-white">
+                                        <option value="">-- Pilih Ruangan --</option>
+                                        @foreach($rooms as $room)
+                                            <option value="{{ $room->id }}" {{ old('room_id') == $room->id ? 'selected' : '' }}>{{ $room->name }} ({{ $room->location ?? $room->code }})</option>
+                                        @endforeach
                                     </select>
+                                </div>
+
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700">Harga Barang</label>
+                                    <div class="mt-1 relative rounded-md shadow-sm">
+                                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                            <span class="text-gray-500 sm:text-sm">Rp</span>
+                                        </div>
+                                        <input type="number" name="price" min="0" class="block w-full pl-10 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" placeholder="0" value="{{ old('price') }}">
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700">Tanggal Pembelian</label>
+                                    <input type="date" name="purchase_date" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" value="{{ old('purchase_date', date('Y-m-d')) }}">
                                 </div>
 
                                 <div class="md:col-span-2">
@@ -172,7 +245,7 @@
                                             <div class="flex text-sm text-gray-600 justify-center">
                                                 <label for="file-upload" class="relative cursor-pointer bg-white rounded-md font-medium text-indigo-600 hover:text-indigo-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-indigo-500">
                                                     <span>Upload file</span>
-                                                    <input id="file-upload" name="file-upload" type="file" class="sr-only">
+                                                    <input id="file-upload" name="photo" type="file" class="sr-only" accept="image/*">
                                                 </label>
                                                 <p class="pl-1">atau drag and drop</p>
                                             </div>
@@ -183,7 +256,7 @@
                             </div>
 
                             <div class="mt-6 flex justify-end">
-                                <button type="button" class="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                                <button type="submit" class="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
                                     Simpan Data Inventaris
                                 </button>
                             </div>

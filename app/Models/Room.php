@@ -15,4 +15,19 @@ class Room extends Model
         'location',
         'capacity',
     ];
+
+    public function inventoryItems()
+    {
+        return $this->hasMany(InventoryItem::class);
+    }
+
+    public function bhpItems()
+    {
+        return $this->hasMany(BhpItem::class);
+    }
+
+    public function procurementDrafts()
+    {
+        return $this->hasMany(ProcurementDraft::class);
+    }
 }

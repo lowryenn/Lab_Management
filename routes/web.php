@@ -1,6 +1,10 @@
 <?php
 
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\StaffLabController;
+use App\Http\Controllers\KepalaLabController;
+use App\Http\Controllers\StaffAdminController;
+use App\Http\Controllers\KaprodiController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
@@ -27,20 +31,33 @@ Route::middleware('auth')->group(function () {
         Route::resource('/admin/rooms', \App\Http\Controllers\RoomController::class);
     });
 
-    Route::middleware('role:kepala_lab')->group(function () {
-        Route::get('/kepala-lab/dashboard', [\App\Http\Controllers\DashboardController::class, 'kepalaLab'])->name('kepala_lab.dashboard');
+    Route::middleware('role:kepala_lab')->prefix('kepala-lab')->name('kepala_lab.')->group(function () {
+        Route::get('/dashboard', [KepalaLabController::class, 'dashboard'])->name('dashboard');
+        Route::post('/drafts', [KepalaLabController::class, 'storeDraft'])->name('drafts.store');
+        Route::post('/drafts/{draft}/items', [KepalaLabController::class, 'addDraftItem'])->name('drafts.items.store');
+        Route::delete('/draft-items/{item}', [KepalaLabController::class, 'deleteDraftItem'])->name('draft-items.destroy');
+        Route::delete('/drafts/{draft}', [KepalaLabController::class, 'deleteDraft'])->name('drafts.destroy');
     });
 
-    Route::middleware('role:kaprodi')->group(function () {
-        Route::get('/kaprodi/dashboard', [\App\Http\Controllers\DashboardController::class, 'kaprodi'])->name('kaprodi.dashboard');
+    Route::middleware('role:kaprodi')->prefix('kaprodi')->name('kaprodi.')->group(function () {
+        Route::get('/dashboard', [KaprodiController::class, 'dashboard'])->name('dashboard');
+        Route::patch('/items/{item}/approve', [KaprodiController::class, 'approveItem'])->name('items.approve');
+        Route::patch('/items/{item}/reject', [KaprodiController::class, 'rejectItem'])->name('items.reject');
+        Route::patch('/drafts/{draft}/finalize', [KaprodiController::class, 'finalizeDraft'])->name('drafts.finalize');
     });
 
-    Route::middleware('role:staff_admin')->group(function () {
-        Route::get('/staff-admin/dashboard', [\App\Http\Controllers\DashboardController::class, 'staffAdmin'])->name('staff_admin.dashboard');
+    Route::middleware('role:staff_admin')->prefix('staff-admin')->name('staff_admin.')->group(function () {
+        Route::get('/dashboard', [StaffAdminController::class, 'dashboard'])->name('dashboard');
+        Route::post('/purchase-orders/{draftItem}', [StaffAdminController::class, 'createPurchaseOrder'])->name('po.store');
+        Route::post('/goods-receipts/{purchaseOrder}', [StaffAdminController::class, 'recordGoodsReceipt'])->name('goods-receipt.store');
+        Route::post('/inventory', [StaffAdminController::class, 'registerInventory'])->name('inventory.store');
     });
 
-    Route::middleware('role:staff_lab')->group(function () {
-        Route::get('/staff-lab/dashboard', [\App\Http\Controllers\DashboardController::class, 'staffLab'])->name('staff_lab.dashboard');
+    Route::middleware('role:staff_lab')->prefix('staff-lab')->name('staff_lab.')->group(function () {
+        Route::get('/dashboard', [StaffLabController::class, 'dashboard'])->name('dashboard');
+        Route::patch('/bhp/{bhpItem}/stock', [StaffLabController::class, 'updateBhpStock'])->name('bhp.update-stock');
+        Route::post('/bhp', [StaffLabController::class, 'storeBhp'])->name('bhp.store');
+        Route::post('/maintenance-logs', [StaffLabController::class, 'storeMaintenanceLog'])->name('maintenance.store');
     });
 });
 

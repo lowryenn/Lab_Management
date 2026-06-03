@@ -5,8 +5,24 @@
         </h2>
     </x-slot>
 
-    <div class="py-12 bg-gray-50 min-h-screen" x-data="{ tab: 'ringkasan' }">
+    <div class="py-12 bg-gray-50 min-h-screen" x-data="{ tab: '{{ request('tab', 'ringkasan') }}', showAddBhp: false }">
         <div class="max-w-7xl mx-auto sm:px-6 lg:px-8 space-y-6">
+
+            {{-- Flash Messages --}}
+            @if(session('success'))
+                <div class="bg-green-100 border border-green-200 text-green-700 px-4 py-3 rounded-xl relative shadow-sm" role="alert">
+                    <span class="block sm:inline">{{ session('success') }}</span>
+                </div>
+            @endif
+            @if($errors->any())
+                <div class="bg-red-100 border border-red-200 text-red-700 px-4 py-3 rounded-xl relative shadow-sm" role="alert">
+                    <ul class="list-disc pl-5">
+                        @foreach($errors->all() as $error)
+                            <li>{{ $error }}</li>
+                        @endforeach
+                    </ul>
+                </div>
+            @endif
             
             <!-- Navigation Tabs (Clean UI) -->
             <div class="border-b border-gray-200 overflow-x-auto">
@@ -30,18 +46,20 @@
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
                         <p class="text-sm font-medium text-gray-500">Total Aset</p>
-                        <h4 class="mt-2 text-3xl font-bold text-gray-900">342</h4>
+                        <h4 class="mt-2 text-3xl font-bold text-gray-900">{{ $totalAssets }}</h4>
                         <p class="mt-2 text-sm text-gray-500">Dalam tanggung jawab Anda</p>
                     </div>
                     <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
                         <p class="text-sm font-medium text-gray-500">BHP Menipis</p>
-                        <h4 class="mt-2 text-3xl font-bold text-gray-900">4</h4>
-                        <p class="mt-2 text-sm text-amber-600 font-medium">Perlu Pengajuan Baru</p>
+                        <h4 class="mt-2 text-3xl font-bold text-gray-900">{{ $bhpLow }}</h4>
+                        <p class="mt-2 text-sm {{ $bhpLow > 0 ? 'text-amber-600 font-medium' : 'text-gray-500' }}">
+                            {{ $bhpLow > 0 ? 'Perlu Pengajuan Baru' : 'Semua stok aman' }}
+                        </p>
                     </div>
                     <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-                        <p class="text-sm font-medium text-gray-500">Jadwal Perawatan</p>
-                        <h4 class="mt-2 text-3xl font-bold text-gray-900">2</h4>
-                        <p class="mt-2 text-sm text-gray-500">Target selesai minggu ini</p>
+                        <p class="text-sm font-medium text-gray-500">Log Maintenance Minggu Ini</p>
+                        <h4 class="mt-2 text-3xl font-bold text-gray-900">{{ $maintenanceDue }}</h4>
+                        <p class="mt-2 text-sm text-gray-500">Catatan pemeliharaan</p>
                     </div>
                 </div>
             </div>
@@ -54,9 +72,39 @@
                             <h3 class="text-lg font-medium text-gray-900">Manajemen Barang Habis Pakai (BHP)</h3>
                             <p class="mt-1 text-sm text-gray-500">Update stok BHP secara manual jika ada barang yang masuk atau terpakai di luar maintenance.</p>
                         </div>
-                        <button type="button" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                        <button type="button" @click="showAddBhp = !showAddBhp" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
                             Tambah BHP Baru
                         </button>
+                    </div>
+
+                    {{-- Add BHP Form --}}
+                    <div x-show="showAddBhp" x-transition class="p-6 border-b border-gray-200 bg-indigo-50">
+                        <form action="{{ route('staff_lab.bhp.store') }}" method="POST">
+                            @csrf
+                            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700">Nama BHP</label>
+                                    <input type="text" name="name" required placeholder="Contoh: Alkohol 70%" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700">Stok Awal</label>
+                                    <input type="number" name="stock" required min="0" value="0" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700">Satuan</label>
+                                    <input type="text" name="unit" required placeholder="Liter, Rim, Tube..." class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700">Stok Minimum</label>
+                                    <input type="number" name="min_stock" min="0" value="2" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                                </div>
+                            </div>
+                            <div class="mt-4 flex justify-end">
+                                <button type="submit" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700">
+                                    Simpan BHP
+                                </button>
+                            </div>
+                        </form>
                     </div>
                     
                     <div class="overflow-x-auto">
@@ -66,36 +114,37 @@
                                     <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nama BHP</th>
                                     <th scope="col" class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Stok Saat Ini</th>
                                     <th scope="col" class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Satuan</th>
+                                    <th scope="col" class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Min. Stok</th>
                                     <th scope="col" class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50">Update Stok Baru</th>
                                 </tr>
                             </thead>
                             <tbody class="bg-white divide-y divide-gray-200">
+                                @forelse($bhpItems as $bhp)
                                 <tr>
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">Alkohol 70%</td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-center text-sm font-medium text-rose-600">1</td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-500">Liter</td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ $bhp->name }}</td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-center text-sm font-medium {{ $bhp->stock <= $bhp->min_stock ? 'text-rose-600' : 'text-emerald-600' }}">
+                                        {{ $bhp->stock }}
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-500">{{ $bhp->unit }}</td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-500">{{ $bhp->min_stock }}</td>
                                     <td class="px-6 py-4 whitespace-nowrap bg-gray-50">
-                                        <form action="#" @submit.prevent class="flex justify-center items-center space-x-2">
-                                            <input type="number" value="1" class="w-20 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm text-center">
-                                            <button type="button" class="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                                        <form action="{{ route('staff_lab.bhp.update-stock', $bhp) }}" method="POST" class="flex justify-center items-center space-x-2">
+                                            @csrf
+                                            @method('PATCH')
+                                            <input type="number" name="stock" value="{{ $bhp->stock }}" min="0" class="w-20 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm text-center">
+                                            <button type="submit" class="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
                                                 Update
                                             </button>
                                         </form>
                                     </td>
                                 </tr>
+                                @empty
                                 <tr>
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">Kertas HVS A4</td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-center text-sm font-medium text-emerald-600">12</td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-500">Rim</td>
-                                    <td class="px-6 py-4 whitespace-nowrap bg-gray-50">
-                                        <form action="#" @submit.prevent class="flex justify-center items-center space-x-2">
-                                            <input type="number" value="12" class="w-20 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm text-center">
-                                            <button type="button" class="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
-                                                Update
-                                            </button>
-                                        </form>
+                                    <td colspan="5" class="px-6 py-8 text-center text-gray-500">
+                                        Belum ada data BHP. Klik "Tambah BHP Baru" untuk menambahkan.
                                     </td>
                                 </tr>
+                                @endforelse
                             </tbody>
                         </table>
                     </div>
@@ -111,40 +160,46 @@
                     </div>
                     
                     <div class="p-6">
-                        <form action="#" @submit.prevent>
+                        <form action="{{ route('staff_lab.maintenance.store') }}" method="POST">
+                            @csrf
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 <div class="md:col-span-2">
                                     <label class="block text-sm font-medium text-gray-700">Pilih Aset Inventaris</label>
-                                    <select class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm bg-white">
-                                        <option>INV-KOM-012 - PC Desktop Rakitan</option>
-                                        <option>INV-KIM-004 - Timbangan Analitik</option>
+                                    <select name="inventory_item_id" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm bg-white">
+                                        <option value="">-- Pilih Aset --</option>
+                                        @foreach($inventoryItems as $item)
+                                            <option value="{{ $item->id }}" {{ old('inventory_item_id') == $item->id ? 'selected' : '' }}>
+                                                {{ $item->label_code ?? 'Tanpa Label' }} - {{ $item->name }} ({{ $item->condition_label }})
+                                            </option>
+                                        @endforeach
                                     </select>
                                 </div>
 
                                 <div>
                                     <label class="block text-sm font-medium text-gray-700">Tanggal Pemeliharaan</label>
-                                    <input type="date" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                                    <input type="date" name="maintenance_date" required value="{{ old('maintenance_date', date('Y-m-d')) }}" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
                                 </div>
 
                                 <div>
                                     <label class="block text-sm font-medium text-gray-700">Update Kondisi Akhir</label>
-                                    <select class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm bg-white">
-                                        <option value="baik">Baik (Normal)</option>
-                                        <option value="kurang_baik">Kurang Baik (Butuh Perbaikan Ringan)</option>
-                                        <option value="rusak_berat">Rusak Berat (Tidak Bisa Digunakan)</option>
+                                    <select name="condition_after" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm bg-white">
+                                        <option value="baik" {{ old('condition_after') == 'baik' ? 'selected' : '' }}>Baik (Normal)</option>
+                                        <option value="kurang_baik" {{ old('condition_after') == 'kurang_baik' ? 'selected' : '' }}>Kurang Baik (Butuh Perbaikan Ringan)</option>
+                                        <option value="rusak_berat" {{ old('condition_after') == 'rusak_berat' ? 'selected' : '' }}>Rusak Berat (Tidak Bisa Digunakan)</option>
                                     </select>
                                 </div>
 
                                 <div class="md:col-span-2">
                                     <label class="block text-sm font-medium text-gray-700">Detail Kegiatan Pemeliharaan</label>
-                                    <textarea rows="3" placeholder="Jelaskan tindakan yang dilakukan..." class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"></textarea>
+                                    <textarea name="description" rows="3" placeholder="Jelaskan tindakan yang dilakukan..." class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">{{ old('description') }}</textarea>
                                 </div>
 
                                 <!-- BHP Usage Section -->
-                                <div class="md:col-span-2 bg-gray-50 p-4 border border-gray-200 rounded-md" x-data="{ pakaiBhp: false }">
+                                <div class="md:col-span-2 bg-gray-50 p-4 border border-gray-200 rounded-md" x-data="{ pakaiBhp: {{ old('uses_bhp') ? 'true' : 'false' }} }">
                                     <div class="flex items-start">
                                         <div class="flex items-center h-5">
-                                            <input type="checkbox" x-model="pakaiBhp" class="focus:ring-indigo-500 h-4 w-4 text-indigo-600 border-gray-300 rounded">
+                                            <input type="hidden" name="uses_bhp" value="0">
+                                            <input type="checkbox" name="uses_bhp" value="1" x-model="pakaiBhp" class="focus:ring-indigo-500 h-4 w-4 text-indigo-600 border-gray-300 rounded">
                                         </div>
                                         <div class="ml-3 text-sm">
                                             <label class="font-medium text-gray-700">Pemeliharaan ini menggunakan Barang Habis Pakai (BHP)</label>
@@ -155,14 +210,18 @@
                                         <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
                                             <div class="sm:col-span-2">
                                                 <label class="block text-xs font-medium text-gray-500 uppercase">Pilih BHP</label>
-                                                <select class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm bg-white">
-                                                    <option>Thermal Paste (Sisa: 5 Tube)</option>
-                                                    <option>Cairan Pembersih Kontak (Sisa: 2 Botol)</option>
+                                                <select name="bhp_item_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm bg-white">
+                                                    <option value="">-- Pilih BHP --</option>
+                                                    @foreach($bhpItems as $bhp)
+                                                        <option value="{{ $bhp->id }}" {{ old('bhp_item_id') == $bhp->id ? 'selected' : '' }}>
+                                                            {{ $bhp->name }} (Sisa: {{ $bhp->stock }} {{ $bhp->unit }})
+                                                        </option>
+                                                    @endforeach
                                                 </select>
                                             </div>
                                             <div>
                                                 <label class="block text-xs font-medium text-gray-500 uppercase">Jumlah Terpakai</label>
-                                                <input type="number" value="1" min="1" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm text-center">
+                                                <input type="number" name="bhp_qty_used" value="{{ old('bhp_qty_used', 1) }}" min="1" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm text-center">
                                             </div>
                                         </div>
                                         <p class="mt-2 text-xs text-gray-500">Stok BHP yang dipilih akan otomatis terpotong saat form ini disimpan.</p>
@@ -171,8 +230,8 @@
                             </div>
 
                             <div class="mt-6 flex justify-end space-x-3">
-                                <button type="button" class="bg-white py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">Batal</button>
-                                <button type="button" class="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                                <button type="reset" class="bg-white py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">Batal</button>
+                                <button type="submit" class="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
                                     Simpan Log Pemeliharaan
                                 </button>
                             </div>
