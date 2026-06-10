@@ -2,124 +2,129 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AuditLog;
+use App\Models\BhpItem;
 use App\Models\InventoryItem;
-use App\Models\ProcurementDraft;
-use App\Models\ProcurementDraftItem;
 use App\Models\Room;
 use Illuminate\Http\Request;
 
 class KepalaLabController extends Controller
 {
     /**
-     * Dashboard - Ringkasan
+     * Dashboard — Inventory access with edit (if not locked).
      */
     public function dashboard()
     {
-        $pendingApprovals = ProcurementDraftItem::where('review_status', 'pending')
-            ->whereHas('draft', function ($q) {
-                $q->where('user_id', auth()->id());
-            })
-            ->count();
-
-        $totalAssetValue = InventoryItem::sum('price');
-        $needsRepair = InventoryItem::where('condition', '!=', 'baik')->count();
-        $drafts = ProcurementDraft::with(['items', 'room'])
-            ->where('user_id', auth()->id())
+        // Inventory items (separated: Inventaris & BHP)
+        $inventarisItems = InventoryItem::with(['room', 'approver'])
+            ->inventaris()
+            ->active()
             ->orderByDesc('created_at')
             ->get();
-        $rooms = Room::all();
-        $inventoryItems = InventoryItem::where('condition', '!=', 'baik')->get();
+
+        $bhpCategoryItems = InventoryItem::with(['room', 'approver'])
+            ->bhpCategory()
+            ->active()
+            ->orderByDesc('created_at')
+            ->get();
+
+        // Room-based inventory counts (auto-counted via COUNT)
+        $rooms = Room::withCount([
+            'inventoryItems as total_items' => function ($q) {
+                $q->where('status', 'active');
+            },
+            'inventoryItems as items_baik' => function ($q) {
+                $q->where('status', 'active')->where('condition', 'baik');
+            },
+            'inventoryItems as items_rusak' => function ($q) {
+                $q->where('status', 'active')->where('condition', '!=', 'baik');
+            },
+        ])->get();
+
+        // Stats
+        $totalInventory = InventoryItem::active()->count();
+        $totalAssetValue = InventoryItem::active()->sum('price');
+        $needsRepair = InventoryItem::active()->where('condition', '!=', 'baik')->count();
+        $pendingApproval = InventoryItem::where('approval_status', 'pending')->count();
+        $lockedCount = InventoryItem::where('approval_status', 'approved')->count();
 
         return view('dashboard.kepala_lab', compact(
-            'pendingApprovals',
-            'totalAssetValue',
-            'needsRepair',
-            'drafts',
-            'rooms',
-            'inventoryItems'
+            'inventarisItems', 'bhpCategoryItems', 'rooms',
+            'totalInventory', 'totalAssetValue', 'needsRepair',
+            'pendingApproval', 'lockedCount'
         ));
     }
 
     /**
-     * Store a new procurement draft.
+     * Update inventory item (only if NOT locked/approved).
      */
-    public function storeDraft(Request $request)
+    public function updateItem(Request $request, InventoryItem $item)
     {
-        $request->validate([
-            'room_id' => 'nullable|exists:rooms,id',
-        ]);
-
-        $draft = ProcurementDraft::create([
-            'draft_number' => ProcurementDraft::generateDraftNumber(),
-            'room_id' => $request->room_id,
-            'user_id' => auth()->id(),
-            'status' => 'draft',
-        ]);
-
-        return redirect()->route('kepala_lab.dashboard', ['tab' => 'riwayat_draf'])
-            ->with('success', 'Draf pengadaan ' . $draft->draft_number . ' berhasil dibuat.');
-    }
-
-    /**
-     * Add item to a draft.
-     */
-    public function addDraftItem(Request $request, ProcurementDraft $draft)
-    {
-        // Only allow adding to own drafts that are still in draft status
-        if ($draft->user_id !== auth()->id() || $draft->status !== 'draft') {
-            abort(403);
+        // Check lock status
+        if ($item->isLocked()) {
+            return redirect()->route('kepala_lab.dashboard', ['tab' => 'inventaris'])
+                ->with('error', 'Data "' . $item->name . '" sudah disetujui Kaprodi dan tidak bisa diubah (LOCKED).');
         }
 
         $request->validate([
             'name' => 'required|string|max:255',
-            'price' => 'required|numeric|min:0',
-            'quantity' => 'required|integer|min:1',
-            'link' => 'nullable|url|max:500',
-            'replaces_inventory_id' => 'nullable|exists:inventory_items,id',
+            'label_code' => 'nullable|string|max:255',
+            'category' => 'required|in:inventaris,bhp',
+            'description' => 'nullable|string|max:500',
+            'brand' => 'nullable|string|max:255',
+            'condition' => 'required|in:baik,kurang_baik,rusak_ringan,rusak_berat',
+            'room_id' => 'nullable|exists:rooms,id',
+            'price' => 'nullable|numeric|min:0',
+            'purchase_date' => 'nullable|date',
         ]);
 
-        ProcurementDraftItem::create([
-            'procurement_draft_id' => $draft->id,
+        $oldValues = $item->toArray();
+
+        $item->update($request->only([
+            'name', 'label_code', 'category', 'description', 'brand',
+            'condition', 'room_id', 'price', 'purchase_date',
+        ]));
+
+        AuditLog::record($item, 'updated', $oldValues, $item->fresh()->toArray());
+
+        return redirect()->route('kepala_lab.dashboard', ['tab' => $request->category === 'bhp' ? 'bhp' : 'inventaris'])
+            ->with('success', 'Data "' . $item->name . '" berhasil diperbarui.');
+    }
+
+    /**
+     * Add new inventory item.
+     */
+    public function storeItem(Request $request)
+    {
+        $request->validate([
+            'name' => 'required|string|max:255',
+            'label_code' => 'nullable|string|max:255|unique:inventory_items,label_code',
+            'category' => 'required|in:inventaris,bhp',
+            'description' => 'nullable|string|max:500',
+            'brand' => 'nullable|string|max:255',
+            'room_id' => 'nullable|exists:rooms,id',
+            'price' => 'nullable|numeric|min:0',
+            'purchase_date' => 'nullable|date',
+        ]);
+
+        $item = InventoryItem::create([
             'name' => $request->name,
-            'price' => $request->price,
-            'quantity' => $request->quantity,
-            'link' => $request->link,
-            'replaces_inventory_id' => $request->replaces_inventory_id,
+            'label_code' => $request->label_code,
+            'category' => $request->category,
+            'description' => $request->description,
+            'brand' => $request->brand,
+            'condition' => 'baik',
+            'room_id' => $request->room_id,
+            'price' => $request->price ?? 0,
+            'purchase_date' => $request->purchase_date,
+            'status' => 'active',
+            'approval_status' => 'pending',
+            'is_labeled' => (bool) $request->label_code,
         ]);
 
-        return redirect()->route('kepala_lab.dashboard', ['tab' => 'riwayat_draf'])
-            ->with('success', 'Item "' . $request->name . '" berhasil ditambahkan ke draf ' . $draft->draft_number . '.');
-    }
+        AuditLog::record($item, 'created', [], $item->toArray());
 
-    /**
-     * Delete a draft item.
-     */
-    public function deleteDraftItem(ProcurementDraftItem $item)
-    {
-        $draft = $item->draft;
-        if ($draft->user_id !== auth()->id() || $draft->status !== 'draft') {
-            abort(403);
-        }
-
-        $item->delete();
-
-        return redirect()->route('kepala_lab.dashboard', ['tab' => 'riwayat_draf'])
-            ->with('success', 'Item berhasil dihapus dari draf.');
-    }
-
-    /**
-     * Delete an entire draft.
-     */
-    public function deleteDraft(ProcurementDraft $draft)
-    {
-        if ($draft->user_id !== auth()->id() || $draft->status !== 'draft') {
-            abort(403);
-        }
-
-        $draftNumber = $draft->draft_number;
-        $draft->delete();
-
-        return redirect()->route('kepala_lab.dashboard', ['tab' => 'riwayat_draf'])
-            ->with('success', 'Draf ' . $draftNumber . ' berhasil dihapus.');
+        return redirect()->route('kepala_lab.dashboard', ['tab' => $request->category === 'bhp' ? 'bhp' : 'inventaris'])
+            ->with('success', 'Item "' . $item->name . '" berhasil ditambahkan dan menunggu review Kaprodi.');
     }
 }

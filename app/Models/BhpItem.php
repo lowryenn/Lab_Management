@@ -22,8 +22,21 @@ class BhpItem extends Model
         return $this->belongsTo(Room::class);
     }
 
+    public function transactions()
+    {
+        return $this->hasMany(BhpTransaction::class);
+    }
+
     public function maintenanceLogs()
     {
         return $this->hasMany(MaintenanceLog::class, 'bhp_item_id');
+    }
+
+    /**
+     * Check if stock is low.
+     */
+    public function isLowStock(): bool
+    {
+        return $this->stock <= $this->min_stock;
     }
 }
