@@ -14,7 +14,7 @@ return new class extends Migration
         Schema::create('purchase_orders', function (Blueprint $table) {
             $table->id();
             $table->string('po_number')->unique(); // PO-2026-001
-            $table->foreignId('procurement_draft_item_id')->constrained('procurement_draft_items')->cascadeOnDelete();
+            $table->foreignId('inventory_item_id')->constrained('inventory_items')->cascadeOnDelete();
             $table->string('status')->default('ordered'); // ordered, partial, completed
             $table->integer('total_ordered')->default(0);
             $table->integer('total_received')->default(0);

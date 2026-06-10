@@ -69,6 +69,11 @@ class InventoryItem extends Model
         return $this->hasMany(InventoryConditionLog::class);
     }
 
+    public function purchaseOrder()
+    {
+        return $this->hasOne(PurchaseOrder::class);
+    }
+
     public function replacedFromItem()
     {
         return $this->belongsTo(self::class, 'replaced_from');

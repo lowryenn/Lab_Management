@@ -242,4 +242,25 @@ router.patch('/:id/stock', authenticate, authorize('staff_lab', 'staff_admin', '
   }
 });
 
+/**
+ * GET /api/bhp/transactions/recent
+ * List recent BHP transactions.
+ */
+router.get('/transactions/recent', authenticate, authorize('staff_lab', 'admin'), async (req, res) => {
+  try {
+    const [rows] = await pool.execute(`
+      SELECT bt.*, b.name AS bhp_item_name, b.unit AS bhp_item_unit, u.name AS user_name
+      FROM bhp_transactions bt
+      LEFT JOIN bhp_items b ON bt.bhp_item_id = b.id
+      LEFT JOIN users u ON bt.user_id = u.id
+      ORDER BY bt.created_at DESC
+      LIMIT 20
+    `);
+    return res.json({ data: rows });
+  } catch (err) {
+    console.error('Get recent transactions error:', err);
+    return res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
 module.exports = router;

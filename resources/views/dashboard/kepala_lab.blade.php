@@ -337,6 +337,23 @@
                                 <span class="font-bold text-rose-600">{{ $room->items_rusak }}</span>
                             </div>
                         </div>
+
+                        <!-- Itemized Breakdown (Auto-Count) -->
+                        <div class="mt-4 pt-4 border-t border-slate-100">
+                            <p class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Detail Barang (Auto-Count):</p>
+                            @if($room->item_breakdown->count() > 0)
+                                <div class="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                                    @foreach($room->item_breakdown as $breakdown)
+                                        <div class="flex justify-between items-center text-xs text-slate-600 bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-100">
+                                            <span class="font-medium truncate max-w-[180px]">{{ $breakdown->name }}</span>
+                                            <span class="bg-indigo-50 text-indigo-700 font-bold px-2 py-0.5 rounded-md">{{ $breakdown->qty }} unit</span>
+                                        </div>
+                                    @endforeach
+                                </div>
+                            @else
+                                <p class="text-xs text-slate-400 italic">Belum ada barang di ruangan ini.</p>
+                            @endif
+                        </div>
                     </div>
                     @endforeach
                 </div>

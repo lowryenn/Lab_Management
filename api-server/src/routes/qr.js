@@ -185,4 +185,28 @@ router.get('/logs/:itemId', authenticate, async (req, res) => {
   }
 });
 
+/**
+ * GET /api/qr/scans
+ * Get recent scans list.
+ */
+router.get('/scans', authenticate, authorize('staff_admin', 'admin'), async (req, res) => {
+  try {
+    const [rows] = await pool.execute(`
+      SELECT ql.*, 
+             i.name AS item_name, i.label_code AS item_label_code, i.room_id AS item_room_id,
+             u.name AS scanned_by_name
+      FROM qr_logs ql
+      LEFT JOIN inventory_items i ON ql.inventory_item_id = i.id
+      LEFT JOIN users u ON ql.scanned_by = u.id
+      WHERE ql.action = 'scan'
+      ORDER BY ql.created_at DESC
+      LIMIT 20
+    `);
+    return res.json({ data: rows });
+  } catch (err) {
+    console.error('Get scans list error:', err);
+    return res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
 module.exports = router;

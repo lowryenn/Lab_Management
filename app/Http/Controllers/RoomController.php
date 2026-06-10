@@ -9,7 +9,10 @@ class RoomController extends Controller
 {
     public function index()
     {
-        $rooms = Room::all();
+        $response = $this->apiCall('GET', '/api/rooms');
+        $roomsData = $response->json()['data'] ?? [];
+        $rooms = $this->hydrateCollection(Room::class, $roomsData);
+
         return view('admin.rooms.index', compact('rooms'));
     }
 
@@ -22,38 +25,57 @@ class RoomController extends Controller
     {
         $request->validate([
             'name' => 'required|string|max:255',
-            'code' => 'required|string|max:255|unique:rooms',
+            'code' => 'required|string|max:255',
             'location' => 'nullable|string|max:255',
             'capacity' => 'required|integer|min:0',
         ]);
 
-        Room::create($request->all());
+        $response = $this->apiCall('POST', '/api/rooms', $request->only('name', 'code', 'location', 'capacity'));
+
+        if ($response->failed()) {
+            return back()->withErrors(['code' => $response->json()['error'] ?? 'Gagal menambahkan ruangan.'])->withInput();
+        }
 
         return redirect()->route('rooms.index')->with('success', 'Ruangan berhasil ditambahkan.');
     }
 
-    public function edit(Room $room)
+    public function edit($id)
     {
+        $response = $this->apiCall('GET', "/api/rooms/{$id}");
+        if ($response->failed()) {
+            abort(404);
+        }
+        $roomData = $response->json()['room'] ?? $response->json()['data'];
+        $room = $this->hydrateModel(Room::class, $roomData);
+
         return view('admin.rooms.edit', compact('room'));
     }
 
-    public function update(Request $request, Room $room)
+    public function update(Request $request, $id)
     {
         $request->validate([
             'name' => 'required|string|max:255',
-            'code' => 'required|string|max:255|unique:rooms,code,'.$room->id,
+            'code' => 'required|string|max:255',
             'location' => 'nullable|string|max:255',
             'capacity' => 'required|integer|min:0',
         ]);
 
-        $room->update($request->all());
+        $response = $this->apiCall('PUT', "/api/rooms/{$id}", $request->only('name', 'code', 'location', 'capacity'));
+
+        if ($response->failed()) {
+            return back()->withErrors(['code' => $response->json()['error'] ?? 'Gagal memperbarui ruangan.'])->withInput();
+        }
 
         return redirect()->route('rooms.index')->with('success', 'Data ruangan berhasil diperbarui.');
     }
 
-    public function destroy(Room $room)
+    public function destroy($id)
     {
-        $room->delete();
+        $response = $this->apiCall('DELETE', "/api/rooms/{$id}");
+        if ($response->failed()) {
+            return redirect()->route('rooms.index')->with('error', $response->json()['error'] ?? 'Gagal menghapus ruangan.');
+        }
+
         return redirect()->route('rooms.index')->with('success', 'Ruangan berhasil dihapus.');
     }
 }

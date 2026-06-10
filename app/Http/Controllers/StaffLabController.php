@@ -9,6 +9,7 @@ use App\Models\InventoryItem;
 use App\Models\BhpTransaction;
 use App\Models\MaintenanceLog;
 use App\Models\Room;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 
@@ -19,27 +20,75 @@ class StaffLabController extends Controller
      */
     public function dashboard()
     {
-        $totalAssets = InventoryItem::active()->count();
-        $bhpLow = BhpItem::whereColumn('stock', '<=', 'min_stock')->count();
-        $maintenanceDue = MaintenanceLog::whereDate('maintenance_date', '>=', now()->startOfWeek())
-            ->whereDate('maintenance_date', '<=', now()->endOfWeek())
-            ->count();
+        // 1. Fetch Stats
+        $statsRes = $this->apiCall('GET', '/api/stats/staff_lab');
+        $stats = $statsRes->json();
+        $totalAssets = $stats['totalAssets'] ?? 0;
+        $bhpLow = $stats['bhpLow'] ?? 0;
+        $maintenanceDue = $stats['maintenanceDue'] ?? 0;
 
-        $bhpItems = BhpItem::with('room')->get();
-        $inventoryItems = InventoryItem::with('room')->active()->get();
-        $rooms = Room::all();
+        // 2. Fetch BHP items
+        $bhpRes = $this->apiCall('GET', '/api/bhp');
+        $bhpItems = collect($bhpRes->json()['data'] ?? [])->map(function($data) {
+            $item = $this->hydrateModel(BhpItem::class, $data);
+            if (!empty($data['room_name'])) {
+                $item->setRelation('room', $this->hydrateModel(Room::class, [
+                    'id' => $data['room_id'],
+                    'name' => $data['room_name'],
+                    'code' => $data['room_code']
+                ]));
+            }
+            return $item;
+        });
 
-        // Recent BHP transactions
-        $recentTransactions = BhpTransaction::with(['bhpItem', 'user'])
-            ->orderByDesc('created_at')
-            ->limit(20)
-            ->get();
+        // 3. Fetch Inventory items
+        $invRes = $this->apiCall('GET', '/api/inventory', ['status' => 'active', 'limit' => 1000]);
+        $inventoryItems = collect($invRes->json()['data'] ?? [])->map(function($data) {
+            $item = $this->hydrateModel(InventoryItem::class, $data);
+            if (!empty($data['room_name'])) {
+                $item->setRelation('room', $this->hydrateModel(Room::class, [
+                    'id' => $data['room_id'],
+                    'name' => $data['room_name'],
+                    'code' => $data['room_code']
+                ]));
+            }
+            return $item;
+        });
 
-        // Recent condition logs
-        $conditionLogs = InventoryConditionLog::with(['inventoryItem', 'user'])
-            ->orderByDesc('created_at')
-            ->limit(20)
-            ->get();
+        // 4. Fetch Rooms
+        $roomsRes = $this->apiCall('GET', '/api/rooms');
+        $rooms = collect($roomsRes->json()['data'] ?? [])->map(fn($data) => $this->hydrateModel(Room::class, $data));
+
+        // 5. Fetch Recent BHP transactions
+        $txRes = $this->apiCall('GET', '/api/bhp/transactions/recent');
+        $recentTransactions = collect($txRes->json()['data'] ?? [])->map(function($data) {
+            $tx = $this->hydrateModel(BhpTransaction::class, $data);
+            $tx->setRelation('bhpItem', $this->hydrateModel(BhpItem::class, [
+                'id' => $data['bhp_item_id'],
+                'name' => $data['bhp_item_name'],
+                'unit' => $data['bhp_item_unit']
+            ]));
+            $tx->setRelation('user', $this->hydrateModel(User::class, [
+                'id' => $data['user_id'],
+                'name' => $data['user_name']
+            ]));
+            return $tx;
+        });
+
+        // 6. Fetch Recent condition logs
+        $logsRes = $this->apiCall('GET', '/api/condition/logs/recent');
+        $conditionLogs = collect($logsRes->json()['data'] ?? [])->map(function($data) {
+            $log = $this->hydrateModel(InventoryConditionLog::class, $data);
+            $log->setRelation('inventoryItem', $this->hydrateModel(InventoryItem::class, [
+                'id' => $data['inventory_item_id'],
+                'name' => $data['item_name']
+            ]));
+            $log->setRelation('user', $this->hydrateModel(User::class, [
+                'id' => $data['user_id'],
+                'name' => $data['user_name']
+            ]));
+            return $log;
+        });
 
         return view('dashboard.staff_lab', compact(
             'totalAssets', 'bhpLow', 'maintenanceDue',
@@ -60,78 +109,50 @@ class StaffLabController extends Controller
             'items.*.description' => 'nullable|string|max:255',
         ]);
 
-        $batchId = 'BULK-' . time() . '-' . Str::random(6);
-        $errors = [];
+        $res = $this->apiCall('POST', '/api/bhp/bulk-usage', ['items' => $request->items]);
 
-        foreach ($request->items as $index => $entry) {
-            $bhp = BhpItem::find($entry['bhp_item_id']);
-            if (!$bhp) {
-                $errors[] = "Item #{$index}: BHP tidak ditemukan.";
-                continue;
-            }
-            if ($bhp->stock < $entry['quantity']) {
-                $errors[] = "Item #{$index}: Stok \"{$bhp->name}\" tidak cukup (sisa: {$bhp->stock} {$bhp->unit}).";
-                continue;
-            }
-
-            $stockBefore = $bhp->stock;
-            $bhp->decrement('stock', $entry['quantity']);
-
-            BhpTransaction::create([
-                'bhp_item_id' => $bhp->id,
-                'type' => 'out',
-                'quantity' => $entry['quantity'],
-                'stock_before' => $stockBefore,
-                'stock_after' => $bhp->stock,
-                'description' => $entry['description'] ?? 'Pemakaian bulk',
-                'batch_id' => $batchId,
-                'user_id' => auth()->id(),
-            ]);
+        if ($res->failed()) {
+            return back()->withErrors([$res->json()['error'] ?? 'Gagal mencatat pemakaian BHP.'])->withInput();
         }
-
-        if (!empty($errors)) {
-            return back()->withErrors($errors)->withInput();
-        }
-
-        AuditLog::record(new BhpTransaction(), 'bulk_usage', [], [
-            'batch_id' => $batchId,
-            'count' => count($request->items),
-        ]);
 
         return redirect()->route('staff_lab.dashboard', ['tab' => 'bulk_bhp'])
-            ->with('success', count($request->items) . ' item BHP berhasil dicatat pemakaiannya (Batch: ' . $batchId . ').');
+            ->with('success', $res->json()['message']);
     }
 
     /**
      * Update BHP stock.
      */
-    public function updateBhpStock(Request $request, BhpItem $bhpItem)
+    public function updateBhpStock(Request $request, $id)
     {
         $request->validate([
             'stock' => 'required|integer|min:0',
         ]);
 
-        $oldStock = $bhpItem->stock;
+        // Fetch old stock to calculate diff
+        $bhpRes = $this->apiCall('GET', "/api/bhp/{$id}");
+        if ($bhpRes->failed()) {
+            return back()->with('error', 'BHP tidak ditemukan.');
+        }
+
+        $bhp = $bhpRes->json()['data'];
+        $oldStock = $bhp['stock'];
         $newStock = $request->stock;
-        $type = $newStock >= $oldStock ? 'in' : 'out';
         $qty = abs($newStock - $oldStock);
 
-        $bhpItem->update(['stock' => $newStock]);
-
         if ($qty > 0) {
-            BhpTransaction::create([
-                'bhp_item_id' => $bhpItem->id,
-                'type' => $type,
+            $res = $this->apiCall('PATCH', "/api/bhp/{$id}/stock", [
+                'type' => $newStock >= $oldStock ? 'in' : 'out',
                 'quantity' => $qty,
-                'stock_before' => $oldStock,
-                'stock_after' => $newStock,
-                'description' => 'Update manual stok',
-                'user_id' => auth()->id(),
+                'description' => 'Update manual stok'
             ]);
+
+            if ($res->failed()) {
+                return back()->with('error', $res->json()['error'] ?? 'Gagal memperbarui stok.');
+            }
         }
 
         return redirect()->route('staff_lab.dashboard', ['tab' => 'kelola_stok'])
-            ->with('success', 'Stok ' . $bhpItem->name . ' diperbarui: ' . $oldStock . ' → ' . $newStock . ' ' . $bhpItem->unit . '.');
+            ->with('success', 'Stok berhasil diperbarui.');
     }
 
     /**
@@ -147,88 +168,36 @@ class StaffLabController extends Controller
             'room_id' => 'nullable|exists:rooms,id',
         ]);
 
-        $bhp = BhpItem::create([
-            'name' => $request->name,
-            'stock' => $request->stock,
-            'unit' => $request->unit,
-            'min_stock' => $request->min_stock ?? 0,
-            'room_id' => $request->room_id,
-        ]);
+        $res = $this->apiCall('POST', '/api/bhp', $request->all());
 
-        if ($request->stock > 0) {
-            BhpTransaction::create([
-                'bhp_item_id' => $bhp->id,
-                'type' => 'in',
-                'quantity' => $request->stock,
-                'stock_before' => 0,
-                'stock_after' => $request->stock,
-                'description' => 'Stok awal',
-                'user_id' => auth()->id(),
-            ]);
+        if ($res->failed()) {
+            return back()->withErrors([$res->json()['error'] ?? 'Gagal menambahkan BHP.'])->withInput();
         }
 
-        AuditLog::record($bhp, 'created', [], $bhp->toArray());
-
         return redirect()->route('staff_lab.dashboard', ['tab' => 'kelola_stok'])
-            ->with('success', 'BHP "' . $request->name . '" berhasil ditambahkan.');
+            ->with('success', 'BHP berhasil ditambahkan.');
     }
 
     /**
      * Update inventory condition (Staff Lab).
      * If rusak_berat: old ID kept as history, new replacement item created.
      */
-    public function updateCondition(Request $request, InventoryItem $item)
+    public function updateCondition(Request $request, $id)
     {
         $request->validate([
             'condition' => 'required|in:baik,kurang_baik,rusak_ringan,rusak_berat',
             'description' => 'nullable|string|max:500',
         ]);
 
-        $oldCondition = $item->condition;
+        $res = $this->apiCall('POST', "/api/condition/{$id}/update", $request->only('condition', 'description'));
 
-        // Log condition change
-        InventoryConditionLog::create([
-            'inventory_item_id' => $item->id,
-            'condition_before' => $oldCondition,
-            'condition_after' => $request->condition,
-            'description' => $request->description,
-            'user_id' => auth()->id(),
-        ]);
-
-        $item->update(['condition' => $request->condition]);
-
-        $message = 'Kondisi "' . $item->name . '" diperbarui: ' . $oldCondition . ' → ' . $request->condition . '.';
-
-        // If rusak_berat: create replacement
-        if ($request->condition === 'rusak_berat') {
-            $item->update(['status' => 'inactive']);
-
-            $newItem = InventoryItem::create([
-                'label_code' => $item->label_code ? $item->label_code . '-R' : null,
-                'name' => $item->name,
-                'category' => $item->category ?? 'inventaris',
-                'condition' => 'baik',
-                'room_id' => $item->room_id,
-                'item_type_id' => $item->item_type_id,
-                'price' => $item->price,
-                'status' => 'active',
-                'approval_status' => 'pending',
-                'replaced_from' => $item->id,
-                'is_labeled' => false,
-            ]);
-
-            $item->update(['replaced_by' => $newItem->id]);
-
-            $message = 'Barang ditandai rusak berat. ID lama (#' . $item->id . ') disimpan sebagai histori. Barang pengganti baru (#' . $newItem->id . ') dibuat.';
-
-            AuditLog::record($item, 'condition_rusak_berat', ['condition' => $oldCondition], [
-                'condition' => 'rusak_berat',
-                'replacement_id' => $newItem->id,
-            ]);
+        if ($res->failed()) {
+            return redirect()->route('staff_lab.dashboard', ['tab' => 'kondisi_barang'])
+                ->with('error', $res->json()['error'] ?? 'Gagal memperbarui kondisi barang.');
         }
 
         return redirect()->route('staff_lab.dashboard', ['tab' => 'kondisi_barang'])
-            ->with('success', $message);
+            ->with('success', $res->json()['message']);
     }
 
     /**
@@ -237,50 +206,22 @@ class StaffLabController extends Controller
     public function storeMaintenanceLog(Request $request)
     {
         $request->validate([
-            'inventory_item_id' => 'required|exists:inventory_items,id',
+            'inventory_item_id' => 'required',
             'maintenance_date' => 'required|date',
             'condition_after' => 'required|in:baik,kurang_baik,rusak_ringan,rusak_berat',
             'description' => 'nullable|string',
             'uses_bhp' => 'nullable|boolean',
-            'bhp_item_id' => 'nullable|required_if:uses_bhp,1|exists:bhp_items,id',
+            'bhp_item_id' => 'nullable|required_if:uses_bhp,1',
             'bhp_qty_used' => 'nullable|required_if:uses_bhp,1|integer|min:1',
         ]);
 
-        if ($request->uses_bhp && $request->bhp_item_id) {
-            $bhp = BhpItem::findOrFail($request->bhp_item_id);
-            if ($bhp->stock < $request->bhp_qty_used) {
-                return back()->withErrors(['bhp_qty_used' => 'Stok BHP tidak mencukupi. Sisa: ' . $bhp->stock . ' ' . $bhp->unit])
-                    ->withInput();
-            }
+        $res = $this->apiCall('POST', '/api/condition/maintenance', $request->all());
 
-            $stockBefore = $bhp->stock;
-            $bhp->decrement('stock', $request->bhp_qty_used);
-
-            BhpTransaction::create([
-                'bhp_item_id' => $bhp->id,
-                'type' => 'out',
-                'quantity' => $request->bhp_qty_used,
-                'stock_before' => $stockBefore,
-                'stock_after' => $bhp->stock,
-                'description' => 'Maintenance: ' . ($request->description ?? 'Pemeliharaan'),
-                'user_id' => auth()->id(),
-            ]);
+        if ($res->failed()) {
+            return back()->withErrors(['bhp_qty_used' => $res->json()['error'] ?? 'Gagal mencatat pemeliharaan.'])->withInput();
         }
 
-        MaintenanceLog::create([
-            'inventory_item_id' => $request->inventory_item_id,
-            'maintenance_date' => $request->maintenance_date,
-            'condition_after' => $request->condition_after,
-            'description' => $request->description,
-            'bhp_item_id' => $request->uses_bhp ? $request->bhp_item_id : null,
-            'bhp_qty_used' => $request->uses_bhp ? $request->bhp_qty_used : 0,
-            'user_id' => auth()->id(),
-        ]);
-
-        $inventoryItem = InventoryItem::findOrFail($request->inventory_item_id);
-        $inventoryItem->update(['condition' => $request->condition_after]);
-
-        return redirect()->route('staff_lab.dashboard', ['tab' => 'log_maintenance'])
-            ->with('success', 'Log pemeliharaan untuk "' . $inventoryItem->name . '" berhasil disimpan.');
+        return redirect()->route('staff_lab.dashboard', ['tab' => 'kondisi_barang'])
+            ->with('success', $res->json()['message']);
     }
 }

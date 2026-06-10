@@ -27,7 +27,7 @@
             @endif
 
             <!-- Glassmorphic Tabs -->
-            <div class="bg-white/60 backdrop-blur-xl border border-white/80 p-1.5 rounded-2xl shadow-sm inline-flex space-x-1">
+            <div class="bg-white/60 backdrop-blur-xl border border-white/80 p-1.5 rounded-2xl shadow-sm inline-flex space-x-1 flex-wrap gap-1 md:gap-0">
                 <button @click="tab = 'ringkasan'" :class="tab === 'ringkasan' ? 'bg-white text-indigo-700 shadow-sm ring-1 ring-slate-200/50' : 'text-slate-500 hover:text-slate-700 hover:bg-white/40'" class="px-6 py-2.5 rounded-xl font-medium text-sm transition-all duration-300 relative overflow-hidden group">
                     <span class="relative z-10 flex items-center gap-2">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path></svg>
@@ -49,6 +49,13 @@
                     <span class="relative z-10 flex items-center gap-2">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                         Riwayat Keputusan
+                    </span>
+                    <div class="absolute inset-0 bg-indigo-50/50 transform scale-x-0 group-hover:scale-x-100 transition-transform origin-left"></div>
+                </button>
+                <button @click="tab = 'kepala_lab'" :class="tab === 'kepala_lab' ? 'bg-white text-indigo-700 shadow-sm ring-1 ring-slate-200/50' : 'text-slate-500 hover:text-slate-700 hover:bg-white/40'" class="px-6 py-2.5 rounded-xl font-medium text-sm transition-all duration-300 relative overflow-hidden group">
+                    <span class="relative z-10 flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
+                        Kelola Kepala Lab
                     </span>
                     <div class="absolute inset-0 bg-indigo-50/50 transform scale-x-0 group-hover:scale-x-100 transition-transform origin-left"></div>
                 </button>
@@ -252,6 +259,59 @@
                                 <tr>
                                     <td colspan="4" class="px-8 py-12 text-center text-slate-500">
                                         Belum ada riwayat keputusan.
+                                    </td>
+                                </tr>
+                                @endforelse
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB 4: KELOLA KEPALA LAB -->
+            <div x-show="tab === 'kepala_lab'" style="display: none;" class="space-y-6" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 translate-y-4" x-transition:enter-end="opacity-100 translate-y-0">
+                <div class="bg-white/80 backdrop-blur-xl rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-200/60 overflow-hidden">
+                    <div class="px-8 py-6 border-b border-slate-200/60 bg-white/50">
+                        <h3 class="text-xl font-bold text-slate-800">Daftar Kepala Laboratorium</h3>
+                        <p class="mt-1 text-sm text-slate-500">Anda dapat menghapus Kepala Laboratorium melalui halaman ini.</p>
+                    </div>
+                    
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="bg-slate-50/80 text-xs uppercase tracking-wider text-slate-500 font-semibold border-b border-slate-200">
+                                    <th class="px-8 py-4">Nama Lengkap</th>
+                                    <th class="px-8 py-4">Email</th>
+                                    <th class="px-8 py-4">Dibuat Pada</th>
+                                    <th class="px-8 py-4 text-center">Tindakan</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-100">
+                                @forelse($kepalaLabs as $user)
+                                <tr class="hover:bg-slate-50/50 transition-colors">
+                                    <td class="px-8 py-4 font-bold text-slate-800">
+                                        {{ $user->name }}
+                                    </td>
+                                    <td class="px-8 py-4 text-sm text-slate-600 font-mono">
+                                        {{ $user->email }}
+                                    </td>
+                                    <td class="px-8 py-4 text-sm text-slate-600">
+                                        {{ $user->created_at->format('d M Y H:i') }}
+                                    </td>
+                                    <td class="px-8 py-4 text-center">
+                                        <form action="{{ route('kaprodi.users.destroy', $user->id) }}" method="POST" onsubmit="return confirm('Apakah Anda yakin ingin menghapus Kepala Lab ini? Semua log audit dan transaksi terkait akan terhapus.');" class="inline">
+                                            @csrf
+                                            @method('DELETE')
+                                            <button type="submit" class="px-4 py-2 bg-rose-50 text-rose-600 border border-rose-100 rounded-xl hover:bg-rose-600 hover:text-white transition font-medium text-sm">
+                                                Hapus
+                                            </button>
+                                        </form>
+                                    </td>
+                                </tr>
+                                @empty
+                                <tr>
+                                    <td colspan="4" class="px-8 py-12 text-center text-slate-500">
+                                        Belum ada pengguna Kepala Lab terdaftar.
                                     </td>
                                 </tr>
                                 @endforelse

@@ -12,6 +12,9 @@ const qrRoutes = require('./routes/qr');
 const bhpRoutes = require('./routes/bhp');
 const roomRoutes = require('./routes/rooms');
 const conditionRoutes = require('./routes/condition');
+const userRoutes = require('./routes/users');
+const poRoutes = require('./routes/po');
+const statsRoutes = require('./routes/stats');
 const { authenticate } = require('./middleware/auth');
 
 const app = express();
@@ -48,6 +51,9 @@ app.use('/api/qr', qrRoutes);
 app.use('/api/bhp', bhpRoutes);
 app.use('/api/rooms', roomRoutes);
 app.use('/api/condition', conditionRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/po', poRoutes);
+app.use('/api/stats', statsRoutes);
 
 // QR scan is public (no auth required for lookup)
 app.post('/api/qr/scan-public', async (req, res) => {

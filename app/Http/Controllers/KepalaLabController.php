@@ -6,6 +6,7 @@ use App\Models\AuditLog;
 use App\Models\BhpItem;
 use App\Models\InventoryItem;
 use App\Models\Room;
+use App\Models\User;
 use Illuminate\Http\Request;
 
 class KepalaLabController extends Controller
@@ -15,38 +16,70 @@ class KepalaLabController extends Controller
      */
     public function dashboard()
     {
-        // Inventory items (separated: Inventaris & BHP)
-        $inventarisItems = InventoryItem::with(['room', 'approver'])
-            ->inventaris()
-            ->active()
-            ->orderByDesc('created_at')
-            ->get();
+        // 1. Fetch Inventaris items
+        $invRes = $this->apiCall('GET', '/api/inventory', ['category' => 'inventaris', 'status' => 'active', 'limit' => 500]);
+        $inventarisItems = collect($invRes->json()['data'] ?? [])->map(function($data) {
+            $item = $this->hydrateModel(InventoryItem::class, $data);
+            if (!empty($data['room_name'])) {
+                $item->setRelation('room', $this->hydrateModel(Room::class, [
+                    'id' => $data['room_id'],
+                    'name' => $data['room_name'],
+                    'code' => $data['room_code'],
+                ]));
+            }
+            if (!empty($data['approved_by_name'])) {
+                $item->setRelation('approver', $this->hydrateModel(User::class, [
+                    'id' => $data['approved_by'],
+                    'name' => $data['approved_by_name'],
+                ]));
+            }
+            return $item;
+        });
 
-        $bhpCategoryItems = InventoryItem::with(['room', 'approver'])
-            ->bhpCategory()
-            ->active()
-            ->orderByDesc('created_at')
-            ->get();
+        // 2. Fetch BHP items
+        $bhpRes = $this->apiCall('GET', '/api/inventory', ['category' => 'bhp', 'status' => 'active', 'limit' => 500]);
+        $bhpCategoryItems = collect($bhpRes->json()['data'] ?? [])->map(function($data) {
+            $item = $this->hydrateModel(InventoryItem::class, $data);
+            if (!empty($data['room_name'])) {
+                $item->setRelation('room', $this->hydrateModel(Room::class, [
+                    'id' => $data['room_id'],
+                    'name' => $data['room_name'],
+                    'code' => $data['room_code'],
+                ]));
+            }
+            if (!empty($data['approved_by_name'])) {
+                $item->setRelation('approver', $this->hydrateModel(User::class, [
+                    'id' => $data['approved_by'],
+                    'name' => $data['approved_by_name'],
+                ]));
+            }
+            return $item;
+        });
 
-        // Room-based inventory counts (auto-counted via COUNT)
-        $rooms = Room::withCount([
-            'inventoryItems as total_items' => function ($q) {
-                $q->where('status', 'active');
-            },
-            'inventoryItems as items_baik' => function ($q) {
-                $q->where('status', 'active')->where('condition', 'baik');
-            },
-            'inventoryItems as items_rusak' => function ($q) {
-                $q->where('status', 'active')->where('condition', '!=', 'baik');
-            },
-        ])->get();
+        // 3. Fetch Rooms with breakdown
+        $roomsRes = $this->apiCall('GET', '/api/rooms');
+        $rooms = collect($roomsRes->json()['data'] ?? [])->map(function($data) {
+            $room = $this->hydrateModel(Room::class, $data);
+            // set attributes for view compatibility
+            $room->total_items = $data['total_inventory'] ?? 0;
+            $room->items_baik = $data['inventory_baik'] ?? 0;
+            $room->items_rusak = $data['inventory_rusak'] ?? 0;
+            
+            if (!empty($data['item_breakdown'])) {
+                $room->item_breakdown = collect($data['item_breakdown'])->map(fn($b) => (object)$b);
+            } else {
+                $room->item_breakdown = collect();
+            }
+            return $room;
+        });
 
-        // Stats
-        $totalInventory = InventoryItem::active()->count();
-        $totalAssetValue = InventoryItem::active()->sum('price');
-        $needsRepair = InventoryItem::active()->where('condition', '!=', 'baik')->count();
-        $pendingApproval = InventoryItem::where('approval_status', 'pending')->count();
-        $lockedCount = InventoryItem::where('approval_status', 'approved')->count();
+        // 4. Fetch Stats
+        $stats = $this->apiCall('GET', '/api/stats/kepala_lab')->json();
+        $totalInventory = $stats['totalInventory'] ?? 0;
+        $totalAssetValue = $stats['totalAssetValue'] ?? 0;
+        $needsRepair = $stats['needsRepair'] ?? 0;
+        $pendingApproval = $stats['pendingApproval'] ?? 0;
+        $lockedCount = $stats['lockedCount'] ?? 0;
 
         return view('dashboard.kepala_lab', compact(
             'inventarisItems', 'bhpCategoryItems', 'rooms',
@@ -58,14 +91,8 @@ class KepalaLabController extends Controller
     /**
      * Update inventory item (only if NOT locked/approved).
      */
-    public function updateItem(Request $request, InventoryItem $item)
+    public function updateItem(Request $request, $id)
     {
-        // Check lock status
-        if ($item->isLocked()) {
-            return redirect()->route('kepala_lab.dashboard', ['tab' => 'inventaris'])
-                ->with('error', 'Data "' . $item->name . '" sudah disetujui Kaprodi dan tidak bisa diubah (LOCKED).');
-        }
-
         $request->validate([
             'name' => 'required|string|max:255',
             'label_code' => 'nullable|string|max:255',
@@ -78,17 +105,18 @@ class KepalaLabController extends Controller
             'purchase_date' => 'nullable|date',
         ]);
 
-        $oldValues = $item->toArray();
-
-        $item->update($request->only([
+        $response = $this->apiCall('PUT', "/api/inventory/{$id}", $request->only([
             'name', 'label_code', 'category', 'description', 'brand',
             'condition', 'room_id', 'price', 'purchase_date',
         ]));
 
-        AuditLog::record($item, 'updated', $oldValues, $item->fresh()->toArray());
+        if ($response->failed()) {
+            return redirect()->route('kepala_lab.dashboard', ['tab' => $request->category === 'bhp' ? 'bhp' : 'inventaris'])
+                ->with('error', $response->json()['error'] ?? 'Gagal memperbarui data.');
+        }
 
         return redirect()->route('kepala_lab.dashboard', ['tab' => $request->category === 'bhp' ? 'bhp' : 'inventaris'])
-            ->with('success', 'Data "' . $item->name . '" berhasil diperbarui.');
+            ->with('success', 'Data berhasil diperbarui.');
     }
 
     /**
@@ -98,7 +126,7 @@ class KepalaLabController extends Controller
     {
         $request->validate([
             'name' => 'required|string|max:255',
-            'label_code' => 'nullable|string|max:255|unique:inventory_items,label_code',
+            'label_code' => 'nullable|string|max:255',
             'category' => 'required|in:inventaris,bhp',
             'description' => 'nullable|string|max:500',
             'brand' => 'nullable|string|max:255',
@@ -107,24 +135,13 @@ class KepalaLabController extends Controller
             'purchase_date' => 'nullable|date',
         ]);
 
-        $item = InventoryItem::create([
-            'name' => $request->name,
-            'label_code' => $request->label_code,
-            'category' => $request->category,
-            'description' => $request->description,
-            'brand' => $request->brand,
-            'condition' => 'baik',
-            'room_id' => $request->room_id,
-            'price' => $request->price ?? 0,
-            'purchase_date' => $request->purchase_date,
-            'status' => 'active',
-            'approval_status' => 'pending',
-            'is_labeled' => (bool) $request->label_code,
-        ]);
+        $response = $this->apiCall('POST', '/api/inventory', $request->all());
 
-        AuditLog::record($item, 'created', [], $item->toArray());
+        if ($response->failed()) {
+            return back()->withErrors(['label_code' => $response->json()['error'] ?? 'Gagal menambahkan item.'])->withInput();
+        }
 
         return redirect()->route('kepala_lab.dashboard', ['tab' => $request->category === 'bhp' ? 'bhp' : 'inventaris'])
-            ->with('success', 'Item "' . $item->name . '" berhasil ditambahkan dan menunggu review Kaprodi.');
+            ->with('success', 'Item berhasil ditambahkan.');
     }
 }

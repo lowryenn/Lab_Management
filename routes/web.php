@@ -42,12 +42,14 @@ Route::middleware('auth')->group(function () {
         Route::get('/items/{item}', [KaprodiController::class, 'showItemDetail'])->name('items.show');
         Route::post('/items/{item}/approve', [KaprodiController::class, 'approveItem'])->name('items.approve');
         Route::post('/items/{item}/reject', [KaprodiController::class, 'rejectItem'])->name('items.reject');
+        Route::delete('/users/{user}', [KaprodiController::class, 'deleteKepalaLab'])->name('users.destroy');
     });
 
     Route::middleware('role:staff_admin')->prefix('staff-admin')->name('staff_admin.')->group(function () {
         Route::get('/dashboard', [StaffAdminController::class, 'dashboard'])->name('dashboard');
         Route::post('/qr/generate/{item}', [StaffAdminController::class, 'generateQr'])->name('qr.generate');
         Route::post('/qr/scan', [StaffAdminController::class, 'scanQr'])->name('qr.scan');
+        Route::post('/qr/campus/{item}', [StaffAdminController::class, 'updateCampusQr'])->name('qr.campus.update');
         Route::post('/inventory', [StaffAdminController::class, 'registerInventory'])->name('inventory.store');
         Route::post('/purchase-orders/{item}', [StaffAdminController::class, 'createPurchaseOrder'])->name('po.store');
         Route::post('/goods-receipts/{purchaseOrder}', [StaffAdminController::class, 'recordGoodsReceipt'])->name('goods-receipt.store');

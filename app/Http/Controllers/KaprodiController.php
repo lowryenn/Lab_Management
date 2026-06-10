@@ -5,6 +5,9 @@ namespace App\Http\Controllers;
 use App\Models\AuditLog;
 use App\Models\InventoryItem;
 use App\Models\Room;
+use App\Models\User;
+use App\Models\InventoryConditionLog;
+use App\Models\MaintenanceLog;
 use Illuminate\Http\Request;
 
 class KaprodiController extends Controller
@@ -16,28 +19,54 @@ class KaprodiController extends Controller
     public function dashboard()
     {
         // Pending items awaiting review
-        $pendingItems = InventoryItem::with(['room', 'itemType'])
-            ->where('approval_status', 'pending')
-            ->active()
-            ->orderByDesc('created_at')
-            ->get();
+        $pendingRes = $this->apiCall('GET', '/api/approval/pending');
+        $pendingItems = collect($pendingRes->json()['data'] ?? [])->map(function($data) {
+            $item = $this->hydrateModel(InventoryItem::class, $data);
+            if (!empty($data['room_name'])) {
+                $item->setRelation('room', $this->hydrateModel(Room::class, [
+                    'id' => $data['room_id'],
+                    'name' => $data['room_name'],
+                    'code' => $data['room_code']
+                ]));
+            }
+            return $item;
+        });
 
         // Recently approved/rejected
-        $reviewedItems = InventoryItem::with(['room', 'approver'])
-            ->whereIn('approval_status', ['approved', 'rejected'])
-            ->orderByDesc('approved_at')
-            ->limit(50)
-            ->get();
+        $historyRes = $this->apiCall('GET', '/api/approval/history');
+        $reviewedItems = collect($historyRes->json()['data'] ?? [])->map(function($data) {
+            $item = $this->hydrateModel(InventoryItem::class, $data);
+            if (!empty($data['room_name'])) {
+                $item->setRelation('room', $this->hydrateModel(Room::class, [
+                    'id' => $data['room_id'],
+                    'name' => $data['room_name']
+                ]));
+            }
+            if (!empty($data['approved_by_name'])) {
+                $item->setRelation('approver', $this->hydrateModel(User::class, [
+                    'id' => $data['approved_by'],
+                    'name' => $data['approved_by_name']
+                ]));
+            }
+            return $item;
+        });
+
+        // Kepala Lab users list
+        $usersRes = $this->apiCall('GET', '/api/users');
+        $kepalaLabs = collect($usersRes->json()['data'] ?? [])
+            ->filter(fn($u) => $u['role'] === 'kepala_lab')
+            ->map(fn($data) => $this->hydrateModel(User::class, $data));
 
         // Stats
-        $pendingCount = $pendingItems->count();
-        $approvedCount = InventoryItem::where('approval_status', 'approved')->count();
-        $rejectedCount = InventoryItem::where('approval_status', 'rejected')->count();
-        $totalAssetValue = InventoryItem::where('approval_status', 'approved')->sum('price');
-        $roomCount = Room::count();
+        $stats = $this->apiCall('GET', '/api/stats/kaprodi')->json();
+        $pendingCount = $stats['pendingCount'] ?? 0;
+        $approvedCount = $stats['approvedCount'] ?? 0;
+        $rejectedCount = $stats['rejectedCount'] ?? 0;
+        $totalAssetValue = $stats['totalAssetValue'] ?? 0;
+        $roomCount = $stats['roomCount'] ?? 0;
 
         return view('dashboard.kaprodi', compact(
-            'pendingItems', 'reviewedItems',
+            'pendingItems', 'reviewedItems', 'kepalaLabs',
             'pendingCount', 'approvedCount', 'rejectedCount',
             'totalAssetValue', 'roomCount'
         ));
@@ -46,9 +75,42 @@ class KaprodiController extends Controller
     /**
      * Show detail page for a specific item (before approval).
      */
-    public function showItemDetail(InventoryItem $item)
+    public function showItemDetail($id)
     {
-        $item->load(['room', 'itemType', 'conditionLogs.user', 'maintenanceLogs.user', 'approver']);
+        $res = $this->apiCall('GET', "/api/inventory/{$id}");
+        if ($res->failed()) {
+            abort(404);
+        }
+        $body = $res->json();
+        $data = $body['data'];
+        $item = $this->hydrateModel(InventoryItem::class, $data);
+        if (!empty($data['room_name'])) {
+            $item->setRelation('room', $this->hydrateModel(Room::class, [
+                'id' => $data['room_id'],
+                'name' => $data['room_name'],
+                'code' => $data['room_code']
+            ]));
+        }
+        if (!empty($body['condition_logs'])) {
+            $logs = collect($body['condition_logs'])->map(function($log) {
+                $l = $this->hydrateModel(InventoryConditionLog::class, $log);
+                if (!empty($log['user_name'])) {
+                    $l->setRelation('user', $this->hydrateModel(User::class, ['id' => $log['user_id'], 'name' => $log['user_name']]));
+                }
+                return $l;
+            });
+            $item->setRelation('conditionLogs', $logs);
+        }
+        if (!empty($body['maintenance_logs'])) {
+            $logs = collect($body['maintenance_logs'])->map(function($log) {
+                $l = $this->hydrateModel(MaintenanceLog::class, $log);
+                if (!empty($log['user_name'])) {
+                    $l->setRelation('user', $this->hydrateModel(User::class, ['id' => $log['user_id'], 'name' => $log['user_name']]));
+                }
+                return $l;
+            });
+            $item->setRelation('maintenanceLogs', $logs);
+        }
 
         return view('dashboard.kaprodi_detail', compact('item'));
     }
@@ -56,59 +118,52 @@ class KaprodiController extends Controller
     /**
      * Approve an inventory item — LOCKS it permanently.
      */
-    public function approveItem(InventoryItem $item)
+    public function approveItem($id)
     {
-        if ($item->approval_status === 'approved') {
+        $response = $this->apiCall('POST', "/api/approval/{$id}/approve");
+        if ($response->failed()) {
             return redirect()->route('kaprodi.dashboard', ['tab' => 'review'])
-                ->with('error', 'Item sudah disetujui sebelumnya.');
+                ->with('error', $response->json()['error'] ?? 'Gagal menyetujui item.');
         }
 
-        $oldStatus = $item->approval_status;
-
-        $item->update([
-            'approval_status' => 'approved',
-            'approved_by' => auth()->id(),
-            'approved_at' => now(),
-        ]);
-
-        AuditLog::record($item, 'approved', [
-            'approval_status' => $oldStatus,
-        ], [
-            'approval_status' => 'approved',
-            'approved_by' => auth()->id(),
-        ]);
-
         return redirect()->route('kaprodi.dashboard', ['tab' => 'review'])
-            ->with('success', 'Item "' . $item->name . '" berhasil disetujui dan dikunci (LOCKED). Data tidak bisa diubah lagi.');
+            ->with('success', 'Item berhasil disetujui.');
     }
 
     /**
      * Reject an inventory item.
      */
-    public function rejectItem(Request $request, InventoryItem $item)
+    public function rejectItem(Request $request, $id)
     {
-        if ($item->approval_status === 'approved') {
-            return redirect()->route('kaprodi.dashboard', ['tab' => 'review'])
-                ->with('error', 'Item sudah disetujui dan tidak bisa ditolak.');
-        }
-
         $request->validate([
             'rejection_reason' => 'nullable|string|max:500',
         ]);
 
-        $item->update([
-            'approval_status' => 'rejected',
-            'rejection_reason' => $request->rejection_reason,
-            'approved_by' => auth()->id(),
-            'approved_at' => now(),
+        $response = $this->apiCall('POST', "/api/approval/{$id}/reject", [
+            'reason' => $request->rejection_reason
         ]);
 
-        AuditLog::record($item, 'rejected', [], [
-            'approval_status' => 'rejected',
-            'reason' => $request->rejection_reason,
-        ]);
+        if ($response->failed()) {
+            return redirect()->route('kaprodi.dashboard', ['tab' => 'review'])
+                ->with('error', $response->json()['error'] ?? 'Gagal menolak item.');
+        }
 
         return redirect()->route('kaprodi.dashboard', ['tab' => 'review'])
-            ->with('success', 'Item "' . $item->name . '" ditolak.');
+            ->with('success', 'Item ditolak.');
+    }
+
+    /**
+     * Delete Kepala Lab user.
+     */
+    public function deleteKepalaLab($id)
+    {
+        $response = $this->apiCall('DELETE', "/api/approval/users/{$id}");
+        if ($response->failed()) {
+            return redirect()->route('kaprodi.dashboard', ['tab' => 'kepala_lab'])
+                ->with('error', $response->json()['error'] ?? 'Gagal menghapus Kepala Lab.');
+        }
+
+        return redirect()->route('kaprodi.dashboard', ['tab' => 'kepala_lab'])
+            ->with('success', 'Kepala Lab berhasil dihapus.');
     }
 }

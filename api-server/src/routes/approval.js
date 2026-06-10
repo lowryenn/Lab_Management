@@ -137,4 +137,25 @@ router.get('/history', authenticate, authorize('kaprodi'), async (req, res) => {
   }
 });
 
+/**
+ * DELETE /api/approval/users/:userId
+ * Kaprodi deletes a kepala_lab user.
+ */
+router.delete('/users/:userId', authenticate, authorize('kaprodi'), async (req, res) => {
+  try {
+    const [rows] = await pool.execute('SELECT * FROM users WHERE id = ?', [req.params.userId]);
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'User tidak ditemukan.' });
+    }
+    if (rows[0].role !== 'kepala_lab') {
+      return res.status(403).json({ error: 'Hanya bisa menghapus Kepala Lab.' });
+    }
+    await pool.execute('DELETE FROM users WHERE id = ?', [req.params.userId]);
+    return res.json({ message: 'Kepala Lab berhasil dihapus.' });
+  } catch (err) {
+    console.error('Delete Kepala Lab error:', err);
+    return res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
 module.exports = router;

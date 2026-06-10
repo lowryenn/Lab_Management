@@ -19,6 +19,15 @@ router.get('/', authenticate, async (req, res) => {
         (SELECT COALESCE(SUM(i.price), 0) FROM inventory_items i WHERE i.room_id = r.id AND i.status = 'active') AS total_asset_value
       FROM rooms r ORDER BY r.name ASC
     `);
+
+    for (let room of rooms) {
+      const [breakdown] = await pool.execute(
+        "SELECT name, COUNT(*) as qty FROM inventory_items WHERE room_id = ? AND status = 'active' GROUP BY name",
+        [room.id]
+      );
+      room.item_breakdown = breakdown;
+    }
+
     return res.json({ data: rooms });
   } catch (err) {
     console.error('Get rooms error:', err);
@@ -70,6 +79,79 @@ router.get('/:id/count', authenticate, async (req, res) => {
     `, [id, id, id, id]);
     return res.json({ counts: result[0] });
   } catch (err) {
+    return res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
+/**
+ * POST /api/rooms
+ * Create new room.
+ */
+router.post('/', authenticate, authorize('admin'), async (req, res) => {
+  try {
+    const { name, code, location, capacity } = req.body;
+    if (!name || !code || capacity === undefined) {
+      return res.status(400).json({ error: 'Nama, kode, dan kapasitas wajib diisi.' });
+    }
+
+    const [result] = await pool.execute(
+      'INSERT INTO rooms (name, code, location, capacity, created_at, updated_at) VALUES (?, ?, ?, ?, NOW(), NOW())',
+      [name, code, location || null, capacity]
+    );
+
+    return res.status(201).json({ message: 'Ruangan berhasil dibuat.', id: result.insertId });
+  } catch (err) {
+    console.error('Create room error:', err);
+    if (err.code === 'ER_DUP_ENTRY') {
+      return res.status(409).json({ error: 'Kode ruangan sudah digunakan.' });
+    }
+    return res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
+/**
+ * PUT /api/rooms/:id
+ * Update room.
+ */
+router.put('/:id', authenticate, authorize('admin'), async (req, res) => {
+  try {
+    const { name, code, location, capacity } = req.body;
+    if (!name || !code || capacity === undefined) {
+      return res.status(400).json({ error: 'Nama, kode, dan kapasitas wajib diisi.' });
+    }
+
+    const [result] = await pool.execute(
+      'UPDATE rooms SET name = ?, code = ?, location = ?, capacity = ?, updated_at = NOW() WHERE id = ?',
+      [name, code, location || null, capacity, req.params.id]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'Ruangan tidak ditemukan.' });
+    }
+
+    return res.json({ message: 'Ruangan berhasil diperbarui.' });
+  } catch (err) {
+    console.error('Update room error:', err);
+    if (err.code === 'ER_DUP_ENTRY') {
+      return res.status(409).json({ error: 'Kode ruangan sudah digunakan.' });
+    }
+    return res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
+/**
+ * DELETE /api/rooms/:id
+ * Delete room.
+ */
+router.delete('/:id', authenticate, authorize('admin'), async (req, res) => {
+  try {
+    const [result] = await pool.execute('DELETE FROM rooms WHERE id = ?', [req.params.id]);
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'Ruangan tidak ditemukan.' });
+    }
+    return res.json({ message: 'Ruangan berhasil dihapus.' });
+  } catch (err) {
+    console.error('Delete room error:', err);
     return res.status(500).json({ error: 'Internal server error.' });
   }
 });

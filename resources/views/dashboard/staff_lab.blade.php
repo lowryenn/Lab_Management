@@ -8,7 +8,7 @@
         </div>
     </x-slot>
 
-    <div class="py-12 bg-slate-50 min-h-screen relative overflow-hidden" x-data="{ tab: '{{ request('tab', 'ringkasan') }}', showBulkModal: false, showConditionModal: false, activeItem: null }">
+    <div class="py-12 bg-slate-50 min-h-screen relative overflow-hidden" x-data="{ tab: '{{ request('tab', 'ringkasan') }}', showBulkModal: false, showConditionModal: false, showMaintenanceModal: false, activeItem: null }">
         <div class="absolute top-0 right-0 w-1/3 h-full bg-gradient-to-bl from-teal-100/30 via-emerald-100/10 to-transparent blur-3xl pointer-events-none -z-10"></div>
         <div class="absolute bottom-0 left-0 w-1/2 h-96 bg-gradient-to-tr from-indigo-100/30 to-transparent blur-3xl pointer-events-none -z-10"></div>
 
@@ -301,8 +301,9 @@
                                             {{ $item->condition_label }}
                                         </span>
                                     </td>
-                                    <td class="px-6 py-4 text-right">
+                                    <td class="px-6 py-4 text-right flex gap-2 justify-end">
                                         <button @click="showConditionModal = true; activeItem = {{ $item->id }}" class="text-indigo-600 bg-indigo-50 hover:bg-indigo-600 hover:text-white px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border border-indigo-100">Ubah Kondisi</button>
+                                        <button @click="showMaintenanceModal = true; activeItem = {{ $item->id }}" class="text-emerald-600 bg-emerald-50 hover:bg-emerald-600 hover:text-white px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border border-emerald-100">Catat Maintenance</button>
                                     </td>
                                 </tr>
 
@@ -337,6 +338,71 @@
                                                 <div class="bg-slate-50 px-6 py-4 flex justify-end gap-3">
                                                     <button type="button" @click="showConditionModal = false; activeItem = null" class="px-4 py-2 border border-slate-300 rounded-xl text-slate-700 bg-white font-medium text-sm">Batal</button>
                                                     <button type="submit" class="px-4 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 font-medium text-sm shadow-md">Simpan Kondisi</button>
+                                                </div>
+                                            </form>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Modal Catat Maintenance Per Item -->
+                                <div x-show="showMaintenanceModal && activeItem === {{ $item->id }}" style="display: none;" class="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+                                    <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+                                        <div class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity" @click="showMaintenanceModal = false; activeItem = null"></div>
+                                        <span class="hidden sm:inline-block sm:align-middle sm:h-screen">&#8203;</span>
+                                        <div class="inline-block align-bottom bg-white rounded-3xl text-left overflow-hidden shadow-2xl transform transition-all sm:my-8 sm:align-middle sm:max-w-md w-full">
+                                            <form action="{{ route('staff_lab.maintenance.store') }}" method="POST" x-data="{ usesBhp: false }">
+                                                @csrf
+                                                <input type="hidden" name="inventory_item_id" value="{{ $item->id }}">
+                                                <div class="px-6 py-6 border-b border-slate-200">
+                                                    <h3 class="text-lg font-bold text-slate-800 leading-tight">Catat Maintenance: {{ $item->name }}</h3>
+                                                    <p class="text-sm text-slate-500 font-mono mt-1">{{ $item->label_code ?? 'ID: '.$item->id }}</p>
+                                                </div>
+                                                <div class="p-6 space-y-4">
+                                                    <div>
+                                                        <label class="block text-sm font-medium text-slate-700 mb-1">Tanggal Pemeliharaan</label>
+                                                        <input type="date" name="maintenance_date" class="w-full rounded-xl border-slate-300 shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-200 text-sm" value="{{ date('Y-m-d') }}" required>
+                                                    </div>
+                                                    <div>
+                                                        <label class="block text-sm font-medium text-slate-700 mb-1">Kondisi Setelah Maintenance</label>
+                                                        <select name="condition_after" class="w-full rounded-xl border-slate-300 shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-200 text-sm" required>
+                                                            <option value="baik">Baik</option>
+                                                            <option value="kurang_baik">Kurang Baik</option>
+                                                            <option value="rusak_ringan">Rusak Ringan</option>
+                                                            <option value="rusak_berat">Rusak Berat (Akan Di-Replacement)</option>
+                                                        </select>
+                                                    </div>
+                                                    <div>
+                                                        <label class="block text-sm font-medium text-slate-700 mb-1">Catatan Kegiatan / Tindakan</label>
+                                                        <textarea name="description" rows="3" class="w-full rounded-xl border-slate-300 shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-200 text-sm" placeholder="Tindakan pemeliharaan yang dilakukan..." required></textarea>
+                                                    </div>
+                                                    
+                                                    <!-- BHP Consumption Toggle -->
+                                                    <div class="pt-2 border-t border-slate-100">
+                                                        <label class="flex items-center gap-2 cursor-pointer">
+                                                            <input type="checkbox" name="uses_bhp" value="1" x-model="usesBhp" class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
+                                                            <span class="text-sm font-medium text-slate-700">Menggunakan BHP (Barang Habis Pakai)</span>
+                                                        </label>
+                                                    </div>
+                                                    
+                                                    <div x-show="usesBhp" x-transition class="space-y-4 pt-2">
+                                                        <div>
+                                                            <label class="block text-sm font-medium text-slate-700 mb-1">Pilih Item BHP</label>
+                                                            <select name="bhp_item_id" :required="usesBhp" class="w-full rounded-xl border-slate-300 shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-200 text-sm">
+                                                                <option value="">-- Pilih BHP --</option>
+                                                                @foreach($bhpItems as $b)
+                                                                    <option value="{{ $b->id }}">{{ $b->name }} (Sisa: {{ $b->stock }} {{ $b->unit }})</option>
+                                                                @endforeach
+                                                            </select>
+                                                        </div>
+                                                        <div>
+                                                            <label class="block text-sm font-medium text-slate-700 mb-1">Jumlah Pemakaian BHP</label>
+                                                            <input type="number" name="bhp_qty_used" :required="usesBhp" min="1" value="1" class="w-full rounded-xl border-slate-300 shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-200 text-sm">
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div class="bg-slate-50 px-6 py-4 flex justify-end gap-3 rounded-b-3xl">
+                                                    <button type="button" @click="showMaintenanceModal = false; activeItem = null" class="px-4 py-2 border border-slate-300 rounded-xl text-slate-700 bg-white font-medium text-sm">Batal</button>
+                                                    <button type="submit" class="px-4 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 font-medium text-sm shadow-md">Simpan Log MT</button>
                                                 </div>
                                             </form>
                                         </div>

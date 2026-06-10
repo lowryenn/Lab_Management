@@ -11,9 +11,12 @@ class DashboardController extends Controller
 {
     public function admin()
     {
-        $totalUsers = User::count();
-        $totalRooms = Room::count();
-        $totalInventory = InventoryItem::count();
+        $response = $this->apiCall('GET', '/api/stats/admin');
+        $stats = $response->json();
+
+        $totalUsers = $stats['totalUsers'] ?? 0;
+        $totalRooms = $stats['totalRooms'] ?? 0;
+        $totalInventory = $stats['totalInventory'] ?? 0;
 
         return view('dashboard.admin', compact('totalUsers', 'totalRooms', 'totalInventory'));
     }

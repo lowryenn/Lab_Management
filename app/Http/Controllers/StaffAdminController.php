@@ -8,49 +8,89 @@ use App\Models\InventoryItem;
 use App\Models\PurchaseOrder;
 use App\Models\QrLog;
 use App\Models\Room;
+use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 
 class StaffAdminController extends Controller
 {
     /**
-     * Dashboard — QR System + Inventory management.
+     * Dashboard - Scanner, Generate QR & Register Manual.
      */
     public function dashboard()
     {
-        // Inventory items for QR generation
-        $inventoryItems = InventoryItem::with(['room', 'itemType'])
-            ->active()
-            ->orderByDesc('created_at')
-            ->get();
+        // 1. Fetch inventory items
+        $invRes = $this->apiCall('GET', '/api/inventory', ['limit' => 1000]);
+        $inventoryItems = collect($invRes->json()['data'] ?? [])->map(function($data) {
+            $item = $this->hydrateModel(InventoryItem::class, $data);
+            if (!empty($data['room_name'])) {
+                $item->setRelation('room', $this->hydrateModel(Room::class, [
+                    'id' => $data['room_id'],
+                    'name' => $data['room_name'],
+                    'code' => $data['room_code'],
+                    'location' => $data['room_location']
+                ]));
+            }
+            return $item;
+        });
 
-        // Items without QR code (and already approved)
-        $noQrItems = $inventoryItems->whereNull('qr_internal')->where('approval_status', 'approved');
+        $noQrItems = $inventoryItems->filter(fn($item) => empty($item->qr_internal));
+        $qrItems = $inventoryItems->filter(fn($item) => !empty($item->qr_internal));
 
-        // Items with QR code
-        $qrItems = $inventoryItems->whereNotNull('qr_internal');
+        // 2. Fetch recent scans
+        $scansRes = $this->apiCall('GET', '/api/qr/scans');
+        $recentScans = collect($scansRes->json()['data'] ?? [])->map(function($data) {
+            $log = $this->hydrateModel(QrLog::class, $data);
+            $log->setRelation('inventoryItem', $this->hydrateModel(InventoryItem::class, [
+                'id' => $data['inventory_item_id'],
+                'name' => $data['item_name'],
+                'label_code' => $data['item_label_code'],
+                'room_id' => $data['item_room_id']
+            ]));
+            $log->setRelation('scanner', $this->hydrateModel(User::class, [
+                'id' => $data['scanned_by'],
+                'name' => $data['scanned_by_name']
+            ]));
+            return $log;
+        });
 
-        // Recent QR scan logs
-        $recentScans = QrLog::with(['inventoryItem', 'scanner'])
-            ->where('action', 'scan')
-            ->orderByDesc('created_at')
-            ->limit(20)
-            ->get();
+        // 3. Fetch rooms
+        $roomsRes = $this->apiCall('GET', '/api/rooms');
+        $rooms = collect($roomsRes->json()['data'] ?? [])->map(fn($data) => $this->hydrateModel(Room::class, $data));
 
-        // Rooms for inventory placement
-        $rooms = Room::all();
+        // 4. Fetch Purchase Orders
+        $poRes = $this->apiCall('GET', '/api/po');
+        $poData = $poRes->json()['data'] ?? [];
+        $purchaseOrders = collect($poData)->map(function($data) {
+            $po = $this->hydrateModel(PurchaseOrder::class, $data);
+            if (!empty($data['inventory_item'])) {
+                $itemData = $data['inventory_item'];
+                $item = $this->hydrateModel(InventoryItem::class, $itemData);
+                if (!empty($itemData['room'])) {
+                    $item->setRelation('room', $this->hydrateModel(Room::class, $itemData['room']));
+                }
+                $po->setRelation('inventoryItem', $item);
+            }
+            if (!empty($data['goods_receipts'])) {
+                $receipts = collect($data['goods_receipts'])->map(function($gr) {
+                    $r = $this->hydrateModel(GoodsReceipt::class, $gr);
+                    if (!empty($gr['receiver_name'])) {
+                        $r->setRelation('receiver', $this->hydrateModel(User::class, ['id' => $gr['received_by'], 'name' => $gr['receiver_name']]));
+                    }
+                    return $r;
+                });
+                $po->setRelation('goodsReceipts', $receipts);
+            }
+            return $po;
+        });
 
-        // Items approved by Kaprodi that need PO (not yet labeled/received)
-        $approvedItems = InventoryItem::with(['room', 'approver'])
-            ->where('approval_status', 'approved')
-            ->whereNull('qr_internal') // Assuming not yet labeled means needs PO
-            ->doesntHave('purchaseOrder')
-            ->get();
+        $poItemIds = $purchaseOrders->pluck('inventory_item_id')->toArray();
 
-        $purchaseOrders = PurchaseOrder::with(['inventoryItem.room', 'goodsReceipts'])
-            ->where('status', '!=', 'completed')
-            ->orderByDesc('created_at')
-            ->get();
+        // Approved items that need PO
+        $approvedItems = $inventoryItems->filter(function($item) use ($poItemIds) {
+            return $item->approval_status === 'approved' && empty($item->qr_internal) && !in_array($item->id, $poItemIds);
+        });
 
         // Stats
         $totalItems = $inventoryItems->count();
@@ -68,29 +108,39 @@ class StaffAdminController extends Controller
     /**
      * Generate QR Code for an inventory item.
      */
-    public function generateQr(InventoryItem $item)
+    public function generateQr($id)
     {
-        $qrString = 'LABINV-' . ($item->label_code ?? $item->id) . '-' . strtoupper(Str::random(8));
+        $res = $this->apiCall('POST', "/api/qr/generate/{$id}");
+        if ($res->failed()) {
+            return redirect()->route('staff_admin.dashboard', ['tab' => 'qr_generate'])
+                ->with('error', $res->json()['error'] ?? 'Gagal generate QR.');
+        }
 
-        $qrData = $this->generateQrSvg($qrString);
+        $body = $res->json();
+        return redirect()->route('staff_admin.dashboard', ['tab' => 'qr_generate'])
+            ->with('success', 'QR Code berhasil di-generate. Kode: ' . $body['qr_code']);
+    }
 
-        $item->update([
-            'qr_internal' => $qrData,
-            'is_labeled' => true,
+    /**
+     * Update Campus QR Code for an inventory item.
+     */
+    public function updateCampusQr(Request $request, $id)
+    {
+        $request->validate([
+            'qr_kampus' => 'required|string|max:255',
         ]);
 
-        QrLog::create([
-            'inventory_item_id' => $item->id,
-            'qr_code' => $qrString,
-            'action' => 'generate',
-            'scanned_by' => auth()->id(),
-            'ip_address' => request()->ip(),
+        $res = $this->apiCall('POST', "/api/qr/campus/{$id}", [
+            'qr_kampus' => $request->qr_kampus,
         ]);
 
-        AuditLog::record($item, 'qr_generated', [], ['qr_code' => $qrString]);
+        if ($res->failed()) {
+            return redirect()->route('staff_admin.dashboard', ['tab' => 'qr_generate'])
+                ->with('error', $res->json()['error'] ?? 'Gagal menyimpan QR Kampus.');
+        }
 
         return redirect()->route('staff_admin.dashboard', ['tab' => 'qr_generate'])
-            ->with('success', 'QR Code untuk "' . $item->name . '" berhasil di-generate. Kode: ' . $qrString);
+            ->with('success', 'QR Kampus berhasil disimpan.');
     }
 
     /**
@@ -100,29 +150,25 @@ class StaffAdminController extends Controller
     {
         $request->validate(['qr_code' => 'required|string']);
 
-        $qrLog = QrLog::where('qr_code', $request->qr_code)
-            ->where('action', 'generate')
-            ->first();
-
-        if (!$qrLog) {
-            return redirect()->route('staff_admin.dashboard', ['tab' => 'qr_scan'])
-                ->with('error', 'QR Code tidak dikenali.');
-        }
-
-        $item = InventoryItem::with('room')->find($qrLog->inventory_item_id);
-        if (!$item) {
-            return redirect()->route('staff_admin.dashboard', ['tab' => 'qr_scan'])
-                ->with('error', 'Item tidak ditemukan.');
-        }
-
-        QrLog::create([
-            'inventory_item_id' => $item->id,
+        $res = $this->apiCall('POST', '/api/qr/scan', [
             'qr_code' => $request->qr_code,
-            'action' => 'scan',
-            'scanned_by' => auth()->id(),
-            'ip_address' => request()->ip(),
-            'user_agent' => request()->userAgent(),
         ]);
+
+        if ($res->failed()) {
+            return redirect()->route('staff_admin.dashboard', ['tab' => 'qr_scan'])
+                ->with('error', $res->json()['error'] ?? 'QR Code tidak dikenali.');
+        }
+
+        $itemData = $res->json()['data'];
+        $item = $this->hydrateModel(InventoryItem::class, $itemData);
+        if (!empty($itemData['room_name'])) {
+            $item->setRelation('room', $this->hydrateModel(Room::class, [
+                'id' => $itemData['room_id'],
+                'name' => $itemData['room_name'],
+                'code' => $itemData['room_code'],
+                'location' => $itemData['room_location']
+            ]));
+        }
 
         return redirect()->route('staff_admin.dashboard', ['tab' => 'qr_scan'])
             ->with('scan_result', $item);
@@ -135,37 +181,31 @@ class StaffAdminController extends Controller
     {
         $request->validate([
             'name' => 'required|string|max:255',
-            'label_code' => 'required|string|max:255|unique:inventory_items,label_code',
+            'label_code' => 'required|string|max:255',
             'room_id' => 'required|exists:rooms,id',
             'category' => 'required|in:inventaris,bhp',
             'price' => 'nullable|numeric|min:0',
             'purchase_date' => 'nullable|date',
             'brand' => 'nullable|string|max:255',
             'photo' => 'nullable|image|max:5120',
+            'qr_kampus' => 'nullable|string|max:255',
         ]);
 
-        $data = [
-            'name' => $request->name,
-            'label_code' => $request->label_code,
-            'room_id' => $request->room_id,
-            'category' => $request->category,
-            'price' => $request->price ?? 0,
-            'purchase_date' => $request->purchase_date,
-            'brand' => $request->brand,
-            'condition' => 'baik',
-            'is_labeled' => true,
-            'status' => 'active',
-            'approval_status' => 'approved', // Admin directly registering makes it approved
-            'approved_by' => auth()->id(),
-            'approved_at' => now(),
-        ];
+        $data = $request->only('name', 'label_code', 'room_id', 'category', 'price', 'purchase_date', 'brand', 'qr_kampus');
+        $data['is_labeled'] = true;
+        $data['condition'] = 'baik';
+        $data['status'] = 'active';
+        $data['approval_status'] = 'approved';
 
         if ($request->hasFile('photo')) {
             $data['photo'] = $request->file('photo')->store('inventory_photos', 'public');
         }
 
-        $item = InventoryItem::create($data);
-        AuditLog::record($item, 'created_by_admin', [], $data);
+        $res = $this->apiCall('POST', '/api/inventory', $data);
+
+        if ($res->failed()) {
+            return back()->withErrors(['label_code' => $res->json()['error'] ?? 'Gagal mendaftarkan inventaris.'])->withInput();
+        }
 
         return redirect()->route('staff_admin.dashboard', ['tab' => 'update_inventaris'])
             ->with('success', 'Inventaris "' . $request->name . '" berhasil didaftarkan.');
@@ -174,64 +214,37 @@ class StaffAdminController extends Controller
     /**
      * Create Purchase Order from approved inventory request.
      */
-    public function createPurchaseOrder(InventoryItem $item)
+    public function createPurchaseOrder($id)
     {
-        if ($item->approval_status !== 'approved') {
-            abort(403, 'Item belum disetujui Kaprodi.');
-        }
+        $res = $this->apiCall('POST', "/api/po/{$id}");
 
-        if ($item->purchaseOrder) {
+        if ($res->failed()) {
             return redirect()->route('staff_admin.dashboard', ['tab' => 'penerimaan_barang'])
-                ->with('error', 'PO sudah dibuat untuk item ini.');
+                ->with('error', $res->json()['error'] ?? 'Gagal membuat Purchase Order.');
         }
-
-        PurchaseOrder::create([
-            'po_number' => PurchaseOrder::generatePoNumber(),
-            'inventory_item_id' => $item->id,
-            'status' => 'ordered',
-            'total_ordered' => 1, // Inventory items are single units
-            'total_received' => 0,
-            'created_by' => auth()->id(),
-        ]);
 
         return redirect()->route('staff_admin.dashboard', ['tab' => 'penerimaan_barang'])
-            ->with('success', 'Purchase Order berhasil dibuat untuk "' . $item->name . '".');
+            ->with('success', 'Purchase Order berhasil dibuat.');
     }
 
     /**
      * Record goods receipt.
      */
-    public function recordGoodsReceipt(Request $request, PurchaseOrder $purchaseOrder)
+    public function recordGoodsReceipt(Request $request, $id)
     {
         $request->validate([
-            'qty_received' => 'required|integer|min:1|max:' . $purchaseOrder->remaining,
+            'qty_received' => 'required|integer|min:1',
             'received_date' => 'required|date',
         ]);
 
-        GoodsReceipt::create([
-            'purchase_order_id' => $purchaseOrder->id,
-            'qty_received' => $request->qty_received,
-            'received_date' => $request->received_date,
-            'received_by' => auth()->id(),
-        ]);
+        $res = $this->apiCall('POST', "/api/po/goods-receipt/{$id}", $request->only('qty_received', 'received_date'));
 
-        $purchaseOrder->increment('total_received', $request->qty_received);
-
-        if ($purchaseOrder->total_received >= $purchaseOrder->total_ordered) {
-            $purchaseOrder->update(['status' => 'completed']);
-        } else {
-            $purchaseOrder->update(['status' => 'partial']);
+        if ($res->failed()) {
+            return redirect()->route('staff_admin.dashboard', ['tab' => 'penerimaan_barang'])
+                ->with('error', $res->json()['error'] ?? 'Gagal mencatat penerimaan barang.');
         }
 
         return redirect()->route('staff_admin.dashboard', ['tab' => 'penerimaan_barang'])
-            ->with('success', $request->qty_received . ' unit berhasil dicatat diterima.');
-    }
-
-    /**
-     * Generate a simple QR code SVG (inline placeholder).
-     */
-    private function generateQrSvg(string $data): string
-    {
-        return 'data:qr;code=' . urlencode($data);
+            ->with('success', $res->json()['message'] ?? 'Penerimaan barang berhasil dicatat.');
     }
 }

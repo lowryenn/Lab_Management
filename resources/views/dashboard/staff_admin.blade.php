@@ -149,6 +149,66 @@
                     <button onclick="window.print()" class="mt-6 bg-slate-900 text-white px-6 py-2.5 rounded-xl text-sm font-bold shadow-lg">Print QR Code</button>
                 </div>
                 @endif
+
+                <!-- Daftar QR Terdaftar & QR Kampus -->
+                <div class="bg-white/80 backdrop-blur-xl border border-slate-200/60 rounded-3xl shadow-xl shadow-slate-200/50 overflow-hidden mt-8">
+                    <div class="px-6 py-5 border-b border-slate-200/60 bg-white/50">
+                        <h3 class="text-lg font-bold text-slate-800">Daftar Inventaris Terdaftar & QR Kampus</h3>
+                        <p class="text-sm text-slate-500 mt-1">Item yang sudah memiliki QR Code internal. Anda dapat memasukkan atau memperbarui kode QR Kampus di sini.</p>
+                    </div>
+                    
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="bg-slate-50/80 text-xs uppercase tracking-wider text-slate-500 font-semibold border-b border-slate-200">
+                                    <th class="px-6 py-4">Nama Barang</th>
+                                    <th class="px-6 py-4">QR Internal</th>
+                                    <th class="px-6 py-4">QR Kampus</th>
+                                    <th class="px-6 py-4 text-right">Update QR Kampus</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-100">
+                                @forelse($qrItems as $item)
+                                <tr class="hover:bg-slate-50/50 transition-colors">
+                                    <td class="px-6 py-4">
+                                        <p class="font-bold text-slate-800">{{ $item->name }}</p>
+                                        <p class="text-xs text-slate-500">{{ $item->label_code ?? 'Auto Generate' }} &bull; {{ $item->room->name ?? '-' }}</p>
+                                    </td>
+                                    <td class="px-6 py-4">
+                                        @if($item->qr_internal)
+                                            <img src="{{ $item->qr_internal }}" alt="QR" class="w-10 h-10 border rounded bg-white p-0.5">
+                                        @else
+                                            -
+                                        @endif
+                                    </td>
+                                    <td class="px-6 py-4">
+                                        @if($item->qr_kampus)
+                                            <span class="bg-indigo-50/80 text-indigo-700 font-bold px-2.5 py-1.5 rounded-lg text-xs font-mono border border-indigo-100">{{ $item->qr_kampus }}</span>
+                                        @else
+                                            <span class="text-slate-400 text-xs italic">Belum diinput</span>
+                                        @endif
+                                    </td>
+                                    <td class="px-6 py-4 text-right">
+                                        <form action="{{ route('staff_admin.qr.campus.update', $item) }}" method="POST" class="inline-flex items-center gap-2 justify-end ml-auto">
+                                            @csrf
+                                            <input type="text" name="qr_kampus" placeholder="Input QR Kampus..." value="{{ $item->qr_kampus }}" class="w-48 rounded-xl border-slate-300 shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-200 text-xs py-1.5 px-3" required>
+                                            <button type="submit" class="bg-slate-900 hover:bg-slate-850 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-colors">
+                                                Simpan
+                                            </button>
+                                        </form>
+                                    </td>
+                                </tr>
+                                @empty
+                                <tr>
+                                    <td colspan="4" class="px-6 py-12 text-center text-slate-500">
+                                        Belum ada barang yang memiliki QR Code internal.
+                                    </td>
+                                </tr>
+                                @endforelse
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
 
             <!-- TAB 3: SCANNER -->
@@ -179,7 +239,7 @@
                         <div class="bg-gradient-to-br from-indigo-500 to-purple-600 rounded-3xl p-8 shadow-xl shadow-indigo-500/20 text-white">
                             <h3 class="text-lg font-bold text-indigo-100 border-b border-indigo-400/50 pb-2 mb-4">Hasil Pencarian Ditemukan</h3>
                             <h2 class="text-3xl font-bold mb-1">{{ $scanned->name }}</h2>
-                            <p class="text-indigo-200 font-mono tracking-wider">{{ $scanned->label_code }}</p>
+                            <p class="text-indigo-200 font-mono tracking-wider mb-4">{{ $scanned->label_code }}</p>
                             
                             <div class="mt-6 space-y-3">
                                 <div class="flex justify-between border-b border-white/10 pb-2">
@@ -189,6 +249,10 @@
                                 <div class="flex justify-between border-b border-white/10 pb-2">
                                     <span class="text-indigo-200">Ruangan</span>
                                     <span class="font-bold">{{ $scanned->room->name ?? 'Belum ditentukan' }}</span>
+                                </div>
+                                <div class="flex justify-between border-b border-white/10 pb-2">
+                                    <span class="text-indigo-200">QR Kampus</span>
+                                    <span class="font-bold font-mono bg-white/20 px-2 py-0.5 rounded">{{ $scanned->qr_kampus ?? 'Belum Diinput' }}</span>
                                 </div>
                                 <div class="flex justify-between border-b border-white/10 pb-2">
                                     <span class="text-indigo-200">Kategori</span>
@@ -372,6 +436,10 @@
                             <div>
                                 <label class="block text-sm font-medium text-slate-700 mb-1">Merk / Brand (Opsional)</label>
                                 <input type="text" name="brand" class="w-full rounded-xl border-slate-300 shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-200">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 mb-1">QR Kampus (Opsional)</label>
+                                <input type="text" name="qr_kampus" class="w-full rounded-xl border-slate-300 shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-200" placeholder="Contoh: QR-UNIV-123">
                             </div>
                         </div>
 

@@ -11,16 +11,16 @@ class PurchaseOrder extends Model
 
     protected $fillable = [
         'po_number',
-        'procurement_draft_item_id',
+        'inventory_item_id',
         'status',
         'total_ordered',
         'total_received',
         'created_by',
     ];
 
-    public function draftItem()
+    public function inventoryItem()
     {
-        return $this->belongsTo(ProcurementDraftItem::class, 'procurement_draft_item_id');
+        return $this->belongsTo(InventoryItem::class, 'inventory_item_id');
     }
 
     public function creator()
