@@ -59,6 +59,13 @@
                     </span>
                     <div class="absolute inset-0 bg-indigo-50/50 transform scale-x-0 group-hover:scale-x-100 transition-transform origin-left"></div>
                 </button>
+                <button @click="tab = 'inventaris_bhp'" :class="tab === 'inventaris_bhp' ? 'bg-white text-indigo-700 shadow-sm ring-1 ring-slate-200/50' : 'text-slate-500 hover:text-slate-700 hover:bg-white/40'" class="px-6 py-2.5 rounded-xl font-medium text-sm transition-all duration-300 relative overflow-hidden group">
+                    <span class="relative z-10 flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+                        Inventaris & BHP
+                    </span>
+                    <div class="absolute inset-0 bg-indigo-50/50 transform scale-x-0 group-hover:scale-x-100 transition-transform origin-left"></div>
+                </button>
             </div>
 
             <!-- TAB 1: RINGKASAN -->
@@ -317,6 +324,106 @@
                                 @endforelse
                             </tbody>
                         </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB 5: INVENTARIS & BHP -->
+            <div x-show="tab === 'inventaris_bhp'" style="display: none;" class="space-y-8" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 translate-y-4" x-transition:enter-end="opacity-100 translate-y-0">
+                <!-- Inner tab for Inventaris / BHP switcher -->
+                <div x-data="{ innerTab: 'inventaris' }" class="space-y-6">
+                    <div class="bg-white/60 backdrop-blur-xl border border-white/80 p-1.5 rounded-xl shadow-sm inline-flex space-x-1">
+                        <button @click="innerTab = 'inventaris'" :class="innerTab === 'inventaris' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-700'" class="px-4 py-2 rounded-lg font-medium text-xs transition-all duration-300">
+                            Inventaris
+                        </button>
+                        <button @click="innerTab = 'bhp'" :class="innerTab === 'bhp' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-700'" class="px-4 py-2 rounded-lg font-medium text-xs transition-all duration-300">
+                            BHP
+                        </button>
+                    </div>
+
+                    <!-- Inner Tab 1: Inventaris -->
+                    <div x-show="innerTab === 'inventaris'" class="bg-white/80 backdrop-blur-xl rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-200/60 overflow-hidden">
+                        <div class="px-8 py-6 border-b border-slate-200/60 bg-white/50">
+                            <h3 class="text-xl font-bold text-slate-800">Daftar Inventaris</h3>
+                            <p class="mt-1 text-sm text-slate-500">Daftar aset tetap yang aktif dalam sistem.</p>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left border-collapse">
+                                <thead>
+                                    <tr class="bg-slate-50/80 text-xs uppercase tracking-wider text-slate-500 font-semibold border-b border-slate-200">
+                                        <th class="px-8 py-4">Nama Barang</th>
+                                        <th class="px-8 py-4">Kondisi</th>
+                                        <th class="px-8 py-4">Ruangan</th>
+                                        <th class="px-8 py-4">Harga</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-slate-100">
+                                    @forelse($allInventaris as $item)
+                                    <tr class="hover:bg-slate-50/50 transition-colors">
+                                        <td class="px-8 py-4">
+                                            <p class="font-bold text-slate-800">{{ $item->name }}</p>
+                                            <p class="text-xs text-slate-500">{{ $item->label_code ?? 'Belum dilabeli' }}</p>
+                                        </td>
+                                        <td class="px-8 py-4 text-sm text-slate-600">
+                                            {{ $item->condition_label }}
+                                        </td>
+                                        <td class="px-8 py-4 text-sm text-slate-600">
+                                            {{ $item->room->name ?? '-' }}
+                                        </td>
+                                        <td class="px-8 py-4 text-sm font-semibold text-slate-800">
+                                            Rp {{ number_format($item->price, 0, ',', '.') }}
+                                        </td>
+                                    </tr>
+                                    @empty
+                                    <tr>
+                                        <td colspan="4" class="px-8 py-12 text-center text-slate-500">
+                                            Belum ada data inventaris.
+                                        </td>
+                                    </tr>
+                                    @endforelse
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Inner Tab 2: BHP -->
+                    <div x-show="innerTab === 'bhp'" style="display: none;" class="bg-white/80 backdrop-blur-xl rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-200/60 overflow-hidden">
+                        <div class="px-8 py-6 border-b border-slate-200/60 bg-white/50">
+                            <h3 class="text-xl font-bold text-slate-800">Daftar BHP (Barang Habis Pakai)</h3>
+                            <p class="mt-1 text-sm text-slate-500">Daftar barang habis pakai yang aktif dalam sistem.</p>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left border-collapse">
+                                <thead>
+                                    <tr class="bg-slate-50/80 text-xs uppercase tracking-wider text-slate-500 font-semibold border-b border-slate-200">
+                                        <th class="px-8 py-4">Nama BHP</th>
+                                        <th class="px-8 py-4">Ruangan</th>
+                                        <th class="px-8 py-4">Harga</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-slate-100">
+                                    @forelse($allBhp as $item)
+                                    <tr class="hover:bg-slate-50/50 transition-colors">
+                                        <td class="px-8 py-4">
+                                            <p class="font-bold text-slate-800">{{ $item->name }}</p>
+                                        </td>
+                                        <td class="px-8 py-4 text-sm text-slate-600">
+                                            {{ $item->room->name ?? '-' }}
+                                        </td>
+                                        <td class="px-8 py-4 text-sm font-semibold text-slate-800">
+                                            Rp {{ number_format($item->price, 0, ',', '.') }}
+                                        </td>
+                                    </tr>
+                                    @empty
+                                    <tr>
+                                        <td colspan="3" class="px-8 py-12 text-center text-slate-500">
+                                            Belum ada data BHP.
+                                        </td>
+                                    </tr>
+                                    @endforelse
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
             </div>

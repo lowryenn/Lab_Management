@@ -44,6 +44,7 @@
                 <button @click="tab = 'qr_scan'" :class="tab === 'qr_scan' ? 'bg-white text-indigo-700 shadow-sm ring-1 ring-slate-200/50' : 'text-slate-500 hover:text-slate-700 hover:bg-white/40'" class="px-6 py-2.5 rounded-xl font-medium text-sm transition-all duration-300">Scanner & Logs</button>
                 <button @click="tab = 'penerimaan_barang'" :class="tab === 'penerimaan_barang' ? 'bg-white text-indigo-700 shadow-sm ring-1 ring-slate-200/50' : 'text-slate-500 hover:text-slate-700 hover:bg-white/40'" class="px-6 py-2.5 rounded-xl font-medium text-sm transition-all duration-300">Penerimaan PO</button>
                 <button @click="tab = 'update_inventaris'" :class="tab === 'update_inventaris' ? 'bg-white text-indigo-700 shadow-sm ring-1 ring-slate-200/50' : 'text-slate-500 hover:text-slate-700 hover:bg-white/40'" class="px-6 py-2.5 rounded-xl font-medium text-sm transition-all duration-300">Register Manual</button>
+                <button @click="tab = 'inventaris_bhp'" :class="tab === 'inventaris_bhp' ? 'bg-white text-indigo-700 shadow-sm ring-1 ring-slate-200/50' : 'text-slate-500 hover:text-slate-700 hover:bg-white/40'" class="px-6 py-2.5 rounded-xl font-medium text-sm transition-all duration-300">Inventaris & BHP</button>
             </div>
 
             <!-- TAB 1: RINGKASAN -->
@@ -450,6 +451,105 @@
                             </button>
                         </div>
                     </form>
+                </div>
+            </div>
+
+            <!-- TAB 6: INVENTARIS & BHP -->
+            <div x-show="tab === 'inventaris_bhp'" style="display: none;" class="space-y-6" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 translate-y-4" x-transition:enter-end="opacity-100 translate-y-0">
+                <div x-data="{ innerTab: 'inventaris' }" class="space-y-6">
+                    <div class="bg-white/60 backdrop-blur-xl border border-white/80 p-1.5 rounded-xl shadow-sm inline-flex space-x-1">
+                        <button @click="innerTab = 'inventaris'" :class="innerTab === 'inventaris' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-700'" class="px-4 py-2 rounded-lg font-medium text-xs transition-all duration-300">
+                            Inventaris
+                        </button>
+                        <button @click="innerTab = 'bhp'" :class="innerTab === 'bhp' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-700'" class="px-4 py-2 rounded-lg font-medium text-xs transition-all duration-300">
+                            BHP
+                        </button>
+                    </div>
+
+                    <!-- Inner Tab 1: Inventaris -->
+                    <div x-show="innerTab === 'inventaris'" class="bg-white/80 backdrop-blur-xl rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-200/60 overflow-hidden">
+                        <div class="px-8 py-6 border-b border-slate-200/60 bg-white/50">
+                            <h3 class="text-xl font-bold text-slate-800">Daftar Inventaris</h3>
+                            <p class="mt-1 text-sm text-slate-500">Daftar aset tetap yang aktif dalam sistem.</p>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left border-collapse">
+                                <thead>
+                                    <tr class="bg-slate-50/80 text-xs uppercase tracking-wider text-slate-500 font-semibold border-b border-slate-200">
+                                        <th class="px-8 py-4">Nama Barang</th>
+                                        <th class="px-8 py-4">Kondisi</th>
+                                        <th class="px-8 py-4">Ruangan</th>
+                                        <th class="px-8 py-4">Harga</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-slate-100">
+                                    @forelse($allInventaris as $item)
+                                    <tr class="hover:bg-slate-50/50 transition-colors">
+                                        <td class="px-8 py-4">
+                                            <p class="font-bold text-slate-800">{{ $item->name }}</p>
+                                            <p class="text-xs text-slate-500">{{ $item->label_code ?? 'Belum dilabeli' }}</p>
+                                        </td>
+                                        <td class="px-8 py-4 text-sm text-slate-600">
+                                            {{ $item->condition_label }}
+                                        </td>
+                                        <td class="px-8 py-4 text-sm text-slate-600">
+                                            {{ $item->room->name ?? '-' }}
+                                        </td>
+                                        <td class="px-8 py-4 text-sm font-semibold text-slate-800">
+                                            Rp {{ number_format($item->price, 0, ',', '.') }}
+                                        </td>
+                                    </tr>
+                                    @empty
+                                    <tr>
+                                        <td colspan="4" class="px-8 py-12 text-center text-slate-500">
+                                            Belum ada data inventaris.
+                                        </td>
+                                    </tr>
+                                    @endforelse
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Inner Tab 2: BHP -->
+                    <div x-show="innerTab === 'bhp'" style="display: none;" class="bg-white/80 backdrop-blur-xl rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-200/60 overflow-hidden">
+                        <div class="px-8 py-6 border-b border-slate-200/60 bg-white/50">
+                            <h3 class="text-xl font-bold text-slate-800">Daftar BHP (Barang Habis Pakai)</h3>
+                            <p class="mt-1 text-sm text-slate-500">Daftar barang habis pakai yang aktif dalam sistem.</p>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left border-collapse">
+                                <thead>
+                                    <tr class="bg-slate-50/80 text-xs uppercase tracking-wider text-slate-500 font-semibold border-b border-slate-200">
+                                        <th class="px-8 py-4">Nama BHP</th>
+                                        <th class="px-8 py-4">Ruangan</th>
+                                        <th class="px-8 py-4">Harga</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-slate-100">
+                                    @forelse($allBhp as $item)
+                                    <tr class="hover:bg-slate-50/50 transition-colors">
+                                        <td class="px-8 py-4">
+                                            <p class="font-bold text-slate-800">{{ $item->name }}</p>
+                                        </td>
+                                        <td class="px-8 py-4 text-sm text-slate-600">
+                                            {{ $item->room->name ?? '-' }}
+                                        </td>
+                                        <td class="px-8 py-4 text-sm font-semibold text-slate-800">
+                                            Rp {{ number_format($item->price, 0, ',', '.') }}
+                                        </td>
+                                    </tr>
+                                    @empty
+                                    <tr>
+                                        <td colspan="3" class="px-8 py-12 text-center text-slate-500">
+                                            Belum ada data BHP.
+                                        </td>
+                                    </tr>
+                                    @endforelse
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
                 </div>
             </div>
 

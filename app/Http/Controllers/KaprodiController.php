@@ -57,6 +57,32 @@ class KaprodiController extends Controller
             ->filter(fn($u) => $u['role'] === 'kepala_lab')
             ->map(fn($data) => $this->hydrateModel(User::class, $data));
 
+        // Fetch active Inventaris items for viewing
+        $allInvRes = $this->apiCall('GET', '/api/inventory', ['category' => 'inventaris', 'status' => 'active', 'limit' => 500]);
+        $allInventaris = collect($allInvRes->json()['data'] ?? [])->map(function($data) {
+            $item = $this->hydrateModel(InventoryItem::class, $data);
+            if (!empty($data['room_name'])) {
+                $item->setRelation('room', $this->hydrateModel(Room::class, [
+                    'id' => $data['room_id'],
+                    'name' => $data['room_name']
+                ]));
+            }
+            return $item;
+        });
+
+        // Fetch active BHP items for viewing
+        $allBhpRes = $this->apiCall('GET', '/api/inventory', ['category' => 'bhp', 'status' => 'active', 'limit' => 500]);
+        $allBhp = collect($allBhpRes->json()['data'] ?? [])->map(function($data) {
+            $item = $this->hydrateModel(InventoryItem::class, $data);
+            if (!empty($data['room_name'])) {
+                $item->setRelation('room', $this->hydrateModel(Room::class, [
+                    'id' => $data['room_id'],
+                    'name' => $data['room_name']
+                ]));
+            }
+            return $item;
+        });
+
         // Stats
         $stats = $this->apiCall('GET', '/api/stats/kaprodi')->json();
         $pendingCount = $stats['pendingCount'] ?? 0;
@@ -68,7 +94,7 @@ class KaprodiController extends Controller
         return view('dashboard.kaprodi', compact(
             'pendingItems', 'reviewedItems', 'kepalaLabs',
             'pendingCount', 'approvedCount', 'rejectedCount',
-            'totalAssetValue', 'roomCount'
+            'totalAssetValue', 'roomCount', 'allInventaris', 'allBhp'
         ));
     }
 

@@ -92,6 +92,10 @@ class StaffAdminController extends Controller
             return $item->approval_status === 'approved' && empty($item->qr_internal) && !in_array($item->id, $poItemIds);
         });
 
+        // Filter Inventaris and BHP active collections for viewing
+        $allInventaris = $inventoryItems->filter(fn($item) => $item->category === 'inventaris' && $item->status === 'active');
+        $allBhp = $inventoryItems->filter(fn($item) => $item->category === 'bhp' && $item->status === 'active');
+
         // Stats
         $totalItems = $inventoryItems->count();
         $itemsWithQr = $qrItems->count();
@@ -101,7 +105,8 @@ class StaffAdminController extends Controller
             'inventoryItems', 'noQrItems', 'qrItems',
             'recentScans', 'rooms',
             'approvedItems', 'purchaseOrders',
-            'totalItems', 'itemsWithQr', 'pendingQr'
+            'totalItems', 'itemsWithQr', 'pendingQr',
+            'allInventaris', 'allBhp'
         ));
     }
 

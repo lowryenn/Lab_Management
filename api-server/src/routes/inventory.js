@@ -38,7 +38,7 @@ router.get('/', authenticate, async (req, res) => {
     }
 
     // Count query
-    const countSql = sql.replace(/SELECT .+ FROM/, 'SELECT COUNT(*) as total FROM');
+    const countSql = sql.replace(/SELECT[\s\S]+?FROM/i, 'SELECT COUNT(*) as total FROM');
     const [countResult] = await pool.execute(countSql, params);
     const total = countResult[0].total;
 
@@ -200,8 +200,16 @@ router.put('/:id', authenticate, authorize('kepala_lab', 'staff_admin', 'admin')
         updated_at = NOW()
       WHERE id = ?
     `, [
-      label_code, name, category, description, brand,
-      condition, room_id, price, purchase_date, acquisition_year,
+      label_code !== undefined ? label_code : null,
+      name !== undefined ? name : null,
+      category !== undefined ? category : null,
+      description !== undefined ? description : null,
+      brand !== undefined ? brand : null,
+      condition !== undefined ? condition : null,
+      room_id !== undefined ? room_id : null,
+      price !== undefined ? price : null,
+      purchase_date !== undefined ? purchase_date : null,
+      acquisition_year !== undefined ? acquisition_year : null,
       req.params.id,
     ]);
 
